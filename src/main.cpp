@@ -18,8 +18,6 @@ const int   daylightOffset_sec = 0;
 
 // Instância do Servidor Web, Bot e RTC
 AsyncWebServer server(80);
-
-// --- TELEGRAM CONFIG ---
 #define BOT_TOKEN "8786688182:AAEPucGKr2TqNSwUycBdkxG6ZhG5BotQs1c"
 WiFiClientSecure clientTelegram;
 UniversalTelegramBot bot(BOT_TOKEN, clientTelegram);
@@ -38,14 +36,22 @@ bool resetPendente = false;
 unsigned long tempoReset = 0;
 bool modoDebug = true; 
 
-// Mecânica e Sensor
+// --- PINOS DE HARDWARE ---
 Servo motorDispenser;
-const int pinoMotor = 12; // Pino do Motor
-const int pinoSensor = 14;
-const int botaoBoot = 0; 
-volatile bool pilulaDetectada = false;
+const int pinoMotor = 12; 
+const int pinoSensor = 14; // Sensor Breakbeam IR
+const int botaoBoot = 0;   // Botão de Acionamento Manual / Intervenção
 
-// --- REGRA DE NEGÓCIO: AGENDAMENTO DINÂMICO ---
+// Pinos do Semáforo e Copo
+const int pinoLedR = 27;
+const int pinoLedY = 26;
+const int pinoLedG = 25;
+const int pinoMicroSwitch = 33; // Sensor do copinho
+
+volatile bool pilulaDetectada = false;
+bool esperandoRetiradaCopo = false;
+
+// --- REGRA DE NEGÓCIO: AGENDAMENTO ---
 struct Dose {
     int hora;
     int minuto;
@@ -56,8 +62,16 @@ const int MAX_DOSES = 10;
 Dose cronograma[MAX_DOSES];
 int totalDoses = 0; 
 
+// Interrupção do Sensor IR
 void IRAM_ATTR sensorISR() {
     pilulaDetectada = true;
+}
+
+// Helper do Semáforo
+void atualizarSemaforo(bool r, bool y, bool g) {
+    digitalWrite(pinoLedR, r);
+    digitalWrite(pinoLedY, y);
+    digitalWrite(pinoLedG, g);
 }
 
 // ======================================================================
@@ -276,11 +290,10 @@ void tratarMensagensTelegram(int numNovasMensagens) {
             resposta += "📦 Estoque: " + String(estoqueTotal) + " pílulas\n";
             resposta += "🕒 Alertas programados: " + String(totalDoses) + "\n";
             
-            // Lê a hora direto do módulo físico DS3231 para confirmar que ele está vivo
             DateTime now = rtc.now();
             char horaAtual[20];
             sprintf(horaAtual, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
-            resposta += "🕰️ Hora do Módulo RTC: " + String(horaAtual) + "\n";
+            resposta += "🕰️ Hora do RTC: " + String(horaAtual) + "\n";
             
             resposta += "🔧 Modo Debug: " + String(modoDebug ? "ATIVADO" : "DESATIVADO");
             bot.sendMessage(chat_id, resposta, "");
@@ -295,12 +308,18 @@ void tratarMensagensTelegram(int numNovasMensagens) {
 }
 
 // ======================================================================
-// LÓGICA CENTRAL: DISPENSAÇÃO
+// LÓGICA CENTRAL: DISPENSAÇÃO (AGORA COM SEMÁFORO)
 // ======================================================================
 
 void executarCicloDispencacao(String motivo) {
     enviarMensagemTelegram("💊 Iniciando Ciclo...\nMotivo: " + motivo, true);
     bool sucesso = false;
+    
+    // Inicia a operação: Luz Amarela (Preparando/Girando)
+    atualizarSemaforo(LOW, HIGH, LOW); 
+    
+    // Garante que o status do copo está resetado para esse novo ciclo
+    esperandoRetiradaCopo = false; 
 
     for (int tentativa = 1; tentativa <= 2; tentativa++) {
         if (tentativa == 2) enviarMensagemTelegram("🔄 Tentando novamente. Pílula não detectada.", true);
@@ -323,8 +342,15 @@ void executarCicloDispencacao(String motivo) {
     if (sucesso) {
         if (estoqueTotal > 0) estoqueTotal--;
         salvarEstoqueEDebug(); 
+        
+        // Pílula caiu: Luz Verde e entra no modo de espera do copo
+        atualizarSemaforo(LOW, LOW, HIGH); 
+        esperandoRetiradaCopo = true; 
+        
         enviarMensagemTelegram("✅ SUCESSO! Pílula detectada.\n📦 Novo estoque: " + String(estoqueTotal), true);
     } else {
+        // Falha Total: Luz Vermelha até intervenção manual (apertar botão BOOT)
+        atualizarSemaforo(HIGH, LOW, LOW); 
         enviarMensagemTelegram("🚨 ERRO CRÍTICO!\nO motor girou 2 vezes e a pílula não caiu.", false);
     }
 }
@@ -336,22 +362,27 @@ void executarCicloDispencacao(String motivo) {
 void setup() {
     Serial.begin(115200);
 
+    // Configuração dos Pinos
     pinMode(botaoBoot, INPUT_PULLUP);
     pinMode(pinoSensor, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(pinoSensor), sensorISR, FALLING);
+    
+    pinMode(pinoLedR, OUTPUT);
+    pinMode(pinoLedY, OUTPUT);
+    pinMode(pinoLedG, OUTPUT);
+    pinMode(pinoMicroSwitch, INPUT_PULLUP);
+
+    // Estado Inicial: Tudo apagado
+    atualizarSemaforo(LOW, LOW, LOW);
 
     motorDispenser.setPeriodHertz(50);    
     motorDispenser.attach(pinoMotor, 500, 2400); 
     motorDispenser.write(90); 
 
-    // --- INICIALIZAÇÃO DO DS3231 ---
     if (!rtc.begin()) {
-        Serial.println("❌ Erro: Módulo RTC DS3231 não encontrado!");
-    } else {
-        // Se o RTC perdeu a bateria, ajusta para a hora da compilação do código temporariamente
-        if (rtc.lostPower()) {
-            rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-        }
+        Serial.println("❌ Erro: RTC DS3231 não encontrado!");
+    } else if (rtc.lostPower()) {
+        rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
     }
 
     LittleFS.begin(true);
@@ -368,14 +399,11 @@ void setup() {
             clientTelegram.setInsecure(); 
             configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
             
-            // --- SINCRONIZAÇÃO HÍBRIDA (NTP -> RTC) ---
             struct tm timeinfo;
             if (getLocalTime(&timeinfo)) {
-                // A internet tem a hora exata. Grava isso fisicamente no chip do DS3231
                 rtc.adjust(DateTime(timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec));
                 Serial.println("✅ RTC DS3231 sincronizado via NTP da Internet.");
             }
-            
             enviarMensagemTelegram("🤖 MedDispenser Online e Sincronizado!", true);
         } else {
             WiFi.softAP("Dispenser_Setup_Erro");
@@ -383,51 +411,35 @@ void setup() {
         }
     }
 
-    // --- ROTAS WEB ---
+    // Rotas da Web API
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){ request->send_P(200, "text/html", index_html); });
-    
-    server.on("/getStatus", HTTP_GET, [](AsyncWebServerRequest *request){ 
-        JsonDocument doc; 
-        doc["configurado"] = configurado; 
-        doc["tutor_id"] = tutor_id; 
-        doc["estoque"] = estoqueTotal;
-        
+    server.on("/getStatus", HTTP_GET, [](AsyncWebServerRequest *request){ /* ... mantido ... */ 
+        JsonDocument doc; doc["configurado"] = configurado; doc["tutor_id"] = tutor_id; doc["estoque"] = estoqueTotal;
         JsonArray arr = doc["horarios"].to<JsonArray>();
         for (int i = 0; i < totalDoses; i++) {
-            char buffer[6];
-            sprintf(buffer, "%02d:%02d", cronograma[i].hora, cronograma[i].minuto);
-            arr.add(String(buffer));
+            char buffer[6]; sprintf(buffer, "%02d:%02d", cronograma[i].hora, cronograma[i].minuto); arr.add(String(buffer));
         }
         String res; serializeJson(doc, res); request->send(200, "application/json", res);
     });
-
-    server.on("/saveConfig", HTTP_GET, [](AsyncWebServerRequest *request){ 
-        JsonDocument doc; 
-        doc["ssid"] = request->hasParam("ssid") ? request->getParam("ssid")->value() : "";
+    server.on("/saveConfig", HTTP_GET, [](AsyncWebServerRequest *request){ /* ... mantido ... */
+        JsonDocument doc; doc["ssid"] = request->hasParam("ssid") ? request->getParam("ssid")->value() : "";
         doc["password"] = request->hasParam("pass") ? request->getParam("pass")->value() : "";
         doc["tutor_id"] = request->hasParam("tutor") ? request->getParam("tutor")->value() : "";
-        doc["estoque"] = 0;
-        doc["debug"] = true; 
-        doc["horarios"] = JsonArray(); 
+        doc["estoque"] = 0; doc["debug"] = true; doc["horarios"] = JsonArray(); 
         File file = LittleFS.open("/config.json", "w"); serializeJson(doc, file); file.close();
         request->send(200, "text/plain", "OK"); resetPendente = true; tempoReset = millis();
     });
-
-    server.on("/setEstoque", HTTP_GET, [](AsyncWebServerRequest *request){ 
+    server.on("/setEstoque", HTTP_GET, [](AsyncWebServerRequest *request){ /* ... mantido ... */
         estoqueTotal = request->hasParam("valor") ? request->getParam("valor")->value().toInt() : 0;
         salvarEstoqueEDebug(); request->send(200, "text/plain", "OK");
     });
-
-    server.onRequestBody([](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+    server.onRequestBody([](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){ /* ... mantido ... */
         if (request->url() == "/saveCronograma") {
-            JsonDocument reqDoc;
-            deserializeJson(reqDoc, (const char*)data);
-            File file = LittleFS.open("/config.json", "r");
-            JsonDocument fileDoc; deserializeJson(fileDoc, file); file.close();
+            JsonDocument reqDoc; deserializeJson(reqDoc, (const char*)data);
+            File file = LittleFS.open("/config.json", "r"); JsonDocument fileDoc; deserializeJson(fileDoc, file); file.close();
             fileDoc["horarios"] = reqDoc["horarios"];
             file = LittleFS.open("/config.json", "w"); serializeJson(fileDoc, file); file.close();
-            carregarConfiguracoes();
-            request->send(200, "text/plain", "Cronograma Atualizado");
+            carregarConfiguracoes(); request->send(200, "text/plain", "Cronograma Atualizado");
         }
     });
 
@@ -437,12 +449,11 @@ void setup() {
 void loop() {
     if (resetPendente && (millis() - tempoReset > 2000)) ESP.restart();
 
-    // Verificação Baseada no RTC Físico (Funciona mesmo sem internet)
+    // Verificação de Agendamento (Sempre verifica o RTC Local)
     static unsigned long ultimaVerificacaoHora = 0;
     if (millis() - ultimaVerificacaoHora > 30000) {
         ultimaVerificacaoHora = millis();
-        
-        DateTime now = rtc.now(); // Lê direto do módulo DS3231
+        DateTime now = rtc.now(); 
 
         for (int i = 0; i < totalDoses; i++) {
             if (now.hour() == cronograma[i].hora && now.minute() == cronograma[i].minuto) {
@@ -459,11 +470,29 @@ void loop() {
         }
     }
 
+    // --- NOVA LÓGICA: DETECÇÃO DE RETIRADA DO COPO ---
+    if (esperandoRetiradaCopo) {
+        // Se o pino for HIGH (Significa que o circuito abriu, o copo saiu)
+        // OBS: Para testar na bancada sem o switch, puxe o fio do GND que está no pino 33!
+        if (digitalRead(pinoMicroSwitch) == HIGH) {
+            delay(100); // Anti-bounce simples
+            if (digitalRead(pinoMicroSwitch) == HIGH) {
+                atualizarSemaforo(LOW, LOW, LOW); // Apaga as luzes
+                esperandoRetiradaCopo = false;
+                
+                // Futura implementação: Cancelar o alarme de 10 minutos entra aqui!
+                enviarMensagemTelegram("✅ Confirmação: O paciente retirou o copo de medicamento.", true);
+            }
+        }
+    }
+
+    // Acionamento Manual / Intervenção após Falha (Limpa a luz Vermelha)
     if (digitalRead(botaoBoot) == LOW) {
         delay(200); 
         executarCicloDispencacao("Acionamento Manual (Botão Placa)");
     }
 
+    // Polling do Telegram
     if (millis() - lastTimeBotRan > botRequestDelay) {
         int numNovasMensagens = bot.getUpdates(bot.last_message_received + 1);
         while (numNovasMensagens) {
