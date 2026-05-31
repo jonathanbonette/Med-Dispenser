@@ -8,19 +8,22 @@
 #include <WiFiClientSecure.h>
 #include <UniversalTelegramBot.h>
 #include <time.h> 
+#include <Wire.h>
+#include "RTClib.h"
 
 // --- CONFIGURAÇÕES DE TEMPO (NTP) ---
 const char* ntpServer = "br.pool.ntp.org"; 
 const long  gmtOffset_sec = -10800; // UTC-3
 const int   daylightOffset_sec = 0;
 
-// Instância do Servidor Web
+// Instância do Servidor Web, Bot e RTC
 AsyncWebServer server(80);
 
 // --- TELEGRAM CONFIG ---
 #define BOT_TOKEN "8786688182:AAEPucGKr2TqNSwUycBdkxG6ZhG5BotQs1c"
 WiFiClientSecure clientTelegram;
 UniversalTelegramBot bot(BOT_TOKEN, clientTelegram);
+RTC_DS3231 rtc;
 
 int botRequestDelay = 2000; 
 unsigned long lastTimeBotRan = 0;
@@ -33,13 +36,11 @@ int estoqueTotal = 0;
 bool configurado = false;
 bool resetPendente = false;
 unsigned long tempoReset = 0;
-
-// --- NOVA VARIÁVEL: MODO DEBUG ---
-bool modoDebug = true; // Começa ativado por padrão para facilitar os testes
+bool modoDebug = true; 
 
 // Mecânica e Sensor
 Servo motorDispenser;
-const int pinoMotor = 13;
+const int pinoMotor = 12; // Pino do Motor
 const int pinoSensor = 14;
 const int botaoBoot = 0; 
 volatile bool pilulaDetectada = false;
@@ -60,7 +61,7 @@ void IRAM_ATTR sensorISR() {
 }
 
 // ======================================================================
-// INTERFACE HTML (MANTIDA INTACTA)
+// INTERFACE HTML 
 // ======================================================================
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -182,7 +183,7 @@ const char index_html[] PROGMEM = R"rawliteral(
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ horarios: horarios })
-            }).then(() => alert('Agenda atualizada!'));
+            }).then(() => alert('Agenda Atualizada!'));
         }
 
         function salvarConfig() {
@@ -204,7 +205,7 @@ const char index_html[] PROGMEM = R"rawliteral(
 )rawliteral";
 
 // ======================================================================
-// LÓGICA DE PERSISTÊNCIA (LITTLEFS)
+// LÓGICA DE PERSISTÊNCIA (LITTLEFS) E RTC
 // ======================================================================
 
 void carregarConfiguracoes() {
@@ -217,7 +218,7 @@ void carregarConfiguracoes() {
             password = doc["password"].as<String>();
             tutor_id = doc["tutor_id"].as<String>();
             estoqueTotal = doc["estoque"].as<int>() | 0;
-            modoDebug = doc["debug"] | true; // Carrega o status do debug (default true)
+            modoDebug = doc["debug"] | true; 
             configurado = true;
 
             totalDoses = 0;
@@ -243,7 +244,7 @@ void salvarEstoqueEDebug() {
     file.close();
     
     doc["estoque"] = estoqueTotal;
-    doc["debug"] = modoDebug; // Salva o status atual do debug
+    doc["debug"] = modoDebug; 
     
     file = LittleFS.open("/config.json", "w");
     serializeJson(doc, file);
@@ -253,15 +254,9 @@ void salvarEstoqueEDebug() {
 // ======================================================================
 // TELEGRAM: MENSAGENS E COMANDOS
 // ======================================================================
-
-// O parâmetro 'isLogRestrito' define se a mensagem é "spam de funcionamento".
-// Se for true, a mensagem SÓ será enviada se modoDebug == true.
 void enviarMensagemTelegram(String texto, bool isLogRestrito = false) {
     if (tutor_id != "" && WiFi.status() == WL_CONNECTED) {
-        // Se for uma mensagem de rotina e o usuário pediu silêncio, a gente aborta.
-        if (isLogRestrito && !modoDebug) {
-            return; 
-        }
+        if (isLogRestrito && !modoDebug) return; 
         bot.sendMessage(tutor_id, texto, "");
     }
 }
@@ -274,28 +269,27 @@ void tratarMensagensTelegram(int numNovasMensagens) {
         if (chat_id != tutor_id) { bot.sendMessage(chat_id, "🚫 Acesso Negado.", ""); continue; }
 
         if (text == "/start") {
-            String welcome = "🤖 Olá! Sou o MedDispenser.\n";
-            welcome += "Envie /informacoes para status.\n";
-            welcome += "Envie /debug para alternar as notificações detalhadas.";
-            bot.sendMessage(chat_id, welcome, "");
+            bot.sendMessage(chat_id, "🤖 Olá! Sou o MedDispenser.\nEnvie /informacoes para status.", "");
         } 
         else if (text == "/informacoes") {
             String resposta = "📋 Status do Sistema\n";
             resposta += "📦 Estoque: " + String(estoqueTotal) + " pílulas\n";
             resposta += "🕒 Alertas programados: " + String(totalDoses) + "\n";
-            resposta += "🔧 Modo Debug: " + String(modoDebug ? "ATIVADO (Log Completo)" : "DESATIVADO (Apenas Alertas)");
+            
+            // Lê a hora direto do módulo físico DS3231 para confirmar que ele está vivo
+            DateTime now = rtc.now();
+            char horaAtual[20];
+            sprintf(horaAtual, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
+            resposta += "🕰️ Hora do Módulo RTC: " + String(horaAtual) + "\n";
+            
+            resposta += "🔧 Modo Debug: " + String(modoDebug ? "ATIVADO" : "DESATIVADO");
             bot.sendMessage(chat_id, resposta, "");
         }
         else if (text == "/debug") {
-            // Inverte o estado atual
             modoDebug = !modoDebug;
-            salvarEstoqueEDebug(); // Salva no LittleFS
-            
-            if (modoDebug) {
-                bot.sendMessage(chat_id, "🔧 Modo Debug ATIVADO.\nVocê receberá o log passo a passo de todas as operações do motor.", "");
-            } else {
-                bot.sendMessage(chat_id, "🔇 Modo Debug DESATIVADO.\nO sistema ficará silencioso e você SÓ receberá mensagens de ERRO CRÍTICO (e futuros alertas de não-ingestão).", "");
-            }
+            salvarEstoqueEDebug(); 
+            if (modoDebug) bot.sendMessage(chat_id, "🔧 Modo Debug ATIVADO.", "");
+            else bot.sendMessage(chat_id, "🔇 Modo Debug DESATIVADO.", "");
         }
     }
 }
@@ -305,7 +299,6 @@ void tratarMensagensTelegram(int numNovasMensagens) {
 // ======================================================================
 
 void executarCicloDispencacao(String motivo) {
-    // Marcamos as mensagens de passo-a-passo como 'true' (Log Restrito)
     enviarMensagemTelegram("💊 Iniciando Ciclo...\nMotivo: " + motivo, true);
     bool sucesso = false;
 
@@ -313,13 +306,11 @@ void executarCicloDispencacao(String motivo) {
         if (tentativa == 2) enviarMensagemTelegram("🔄 Tentando novamente. Pílula não detectada.", true);
         
         pilulaDetectada = false; 
-
-        // --- MELHORIA 1: LOG DO MOTOR ANTES DE GIRAR ---
         enviarMensagemTelegram("⚙️ Acionando motor (Tentativa " + String(tentativa) + " de 2)...", true);
         
-        motorDispenser.write(180);
+        motorDispenser.write(0);   
         delay(800);
-        motorDispenser.write(0);
+        motorDispenser.write(90);  
 
         unsigned long inicioEspera = millis();
         while (millis() - inicioEspera < 10000) {
@@ -334,13 +325,12 @@ void executarCicloDispencacao(String motivo) {
         salvarEstoqueEDebug(); 
         enviarMensagemTelegram("✅ SUCESSO! Pílula detectada.\n📦 Novo estoque: " + String(estoqueTotal), true);
     } else {
-        // --- ERRO CRÍTICO (Falso por padrão: Envia SEMPRE, independente do modo debug) ---
         enviarMensagemTelegram("🚨 ERRO CRÍTICO!\nO motor girou 2 vezes e a pílula não caiu.", false);
     }
 }
 
 // ======================================================================
-// SETUP E LOOP COM NOVAS ROTAS API
+// SETUP E LOOP 
 // ======================================================================
 
 void setup() {
@@ -352,7 +342,17 @@ void setup() {
 
     motorDispenser.setPeriodHertz(50);    
     motorDispenser.attach(pinoMotor, 500, 2400); 
-    motorDispenser.write(0); 
+    motorDispenser.write(90); 
+
+    // --- INICIALIZAÇÃO DO DS3231 ---
+    if (!rtc.begin()) {
+        Serial.println("❌ Erro: Módulo RTC DS3231 não encontrado!");
+    } else {
+        // Se o RTC perdeu a bateria, ajusta para a hora da compilação do código temporariamente
+        if (rtc.lostPower()) {
+            rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+        }
+    }
 
     LittleFS.begin(true);
     carregarConfiguracoes();
@@ -367,6 +367,15 @@ void setup() {
         if (WiFi.status() == WL_CONNECTED) {
             clientTelegram.setInsecure(); 
             configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+            
+            // --- SINCRONIZAÇÃO HÍBRIDA (NTP -> RTC) ---
+            struct tm timeinfo;
+            if (getLocalTime(&timeinfo)) {
+                // A internet tem a hora exata. Grava isso fisicamente no chip do DS3231
+                rtc.adjust(DateTime(timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec));
+                Serial.println("✅ RTC DS3231 sincronizado via NTP da Internet.");
+            }
+            
             enviarMensagemTelegram("🤖 MedDispenser Online e Sincronizado!", true);
         } else {
             WiFi.softAP("Dispenser_Setup_Erro");
@@ -389,7 +398,6 @@ void setup() {
             sprintf(buffer, "%02d:%02d", cronograma[i].hora, cronograma[i].minuto);
             arr.add(String(buffer));
         }
-        
         String res; serializeJson(doc, res); request->send(200, "application/json", res);
     });
 
@@ -399,9 +407,8 @@ void setup() {
         doc["password"] = request->hasParam("pass") ? request->getParam("pass")->value() : "";
         doc["tutor_id"] = request->hasParam("tutor") ? request->getParam("tutor")->value() : "";
         doc["estoque"] = 0;
-        doc["debug"] = true; // Por padrão, ativa o debug em instalações limpas
+        doc["debug"] = true; 
         doc["horarios"] = JsonArray(); 
-        
         File file = LittleFS.open("/config.json", "w"); serializeJson(doc, file); file.close();
         request->send(200, "text/plain", "OK"); resetPendente = true; tempoReset = millis();
     });
@@ -415,20 +422,11 @@ void setup() {
         if (request->url() == "/saveCronograma") {
             JsonDocument reqDoc;
             deserializeJson(reqDoc, (const char*)data);
-            
             File file = LittleFS.open("/config.json", "r");
-            JsonDocument fileDoc; 
-            deserializeJson(fileDoc, file);
-            file.close();
-
+            JsonDocument fileDoc; deserializeJson(fileDoc, file); file.close();
             fileDoc["horarios"] = reqDoc["horarios"];
-
-            file = LittleFS.open("/config.json", "w");
-            serializeJson(fileDoc, file);
-            file.close();
-
+            file = LittleFS.open("/config.json", "w"); serializeJson(fileDoc, file); file.close();
             carregarConfiguracoes();
-
             request->send(200, "text/plain", "Cronograma Atualizado");
         }
     });
@@ -439,23 +437,24 @@ void setup() {
 void loop() {
     if (resetPendente && (millis() - tempoReset > 2000)) ESP.restart();
 
+    // Verificação Baseada no RTC Físico (Funciona mesmo sem internet)
     static unsigned long ultimaVerificacaoHora = 0;
-    if (WiFi.status() == WL_CONNECTED && millis() - ultimaVerificacaoHora > 30000) {
+    if (millis() - ultimaVerificacaoHora > 30000) {
         ultimaVerificacaoHora = millis();
-        struct tm timeinfo;
-        if (getLocalTime(&timeinfo)) {
-            for (int i = 0; i < totalDoses; i++) {
-                if (timeinfo.tm_hour == cronograma[i].hora && timeinfo.tm_min == cronograma[i].minuto) {
-                    if (!cronograma[i].processada) {
-                        char msgBuf[30];
-                        sprintf(msgBuf, "Agenda: %02d:%02d", cronograma[i].hora, cronograma[i].minuto);
-                        executarCicloDispencacao(String(msgBuf));
-                        cronograma[i].processada = true; 
-                    }
-                } 
-                else if (timeinfo.tm_min != cronograma[i].minuto) {
-                    cronograma[i].processada = false;
+        
+        DateTime now = rtc.now(); // Lê direto do módulo DS3231
+
+        for (int i = 0; i < totalDoses; i++) {
+            if (now.hour() == cronograma[i].hora && now.minute() == cronograma[i].minuto) {
+                if (!cronograma[i].processada) {
+                    char msgBuf[30];
+                    sprintf(msgBuf, "Agenda: %02d:%02d", cronograma[i].hora, cronograma[i].minuto);
+                    executarCicloDispencacao(String(msgBuf));
+                    cronograma[i].processada = true; 
                 }
+            } 
+            else if (now.minute() != cronograma[i].minuto) {
+                cronograma[i].processada = false;
             }
         }
     }
