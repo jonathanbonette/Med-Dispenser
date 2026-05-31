@@ -42,11 +42,12 @@ const int pinoMotor = 12;
 const int pinoSensor = 14; // Sensor Breakbeam IR
 const int botaoBoot = 0;   // Botão de Acionamento Manual / Intervenção
 
-// Pinos do Semáforo e Copo
+// Pinos do Semáforo, Copo e Áudio
 const int pinoLedR = 27;
 const int pinoLedY = 26;
 const int pinoLedG = 25;
-const int pinoMicroSwitch = 33; // Sensor do copinho
+const int pinoMicroSwitch = 33; 
+const int pinoBuzzer = 5; // Novo pino para o Buzzer
 
 volatile bool pilulaDetectada = false;
 bool esperandoRetiradaCopo = false;
@@ -67,15 +68,26 @@ void IRAM_ATTR sensorISR() {
     pilulaDetectada = true;
 }
 
-// Helper do Semáforo
+// Helpers Visuais e Sonoros
 void atualizarSemaforo(bool r, bool y, bool g) {
     digitalWrite(pinoLedR, r);
     digitalWrite(pinoLedY, y);
     digitalWrite(pinoLedG, g);
 }
 
+void tocarBuzzer(int repeticoes, int tempoLigado, int tempoDesligado) {
+    for (int i = 0; i < repeticoes; i++) {
+        digitalWrite(pinoBuzzer, HIGH);
+        delay(tempoLigado);
+        digitalWrite(pinoBuzzer, LOW);
+        if (i < repeticoes - 1) { // Não dá delay extra no último bip
+            delay(tempoDesligado);
+        }
+    }
+}
+
 // ======================================================================
-// INTERFACE HTML 
+// INTERFACE HTML (MANTIDA INTACTA)
 // ======================================================================
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -110,7 +122,6 @@ const char index_html[] PROGMEM = R"rawliteral(
             <button class="btn btn-success" onclick="salvarConfig()">Ativar</button>
         </div>
     </div>
-
     <div id="main-app" class="hidden">
         <nav>
             <a onclick="showTab('home')">Status</a>
@@ -125,14 +136,12 @@ const char index_html[] PROGMEM = R"rawliteral(
                     <div id="lista-horarios-home">Carregando...</div>
                 </div>
             </div>
-
             <div id="config" class="tab-content hidden">
                 <div class="card">
                     <h3>Abastecimento</h3>
                     <input type="number" id="add-stock" placeholder="Novo total de pílulas na gaveta">
                     <button class="btn btn-success" onclick="updateStock()">Salvar Estoque</button>
                 </div>
-
                 <div class="card">
                     <h3>Cronograma de Doses</h3>
                     <div style="display: flex; gap: 10px;">
@@ -145,73 +154,41 @@ const char index_html[] PROGMEM = R"rawliteral(
             </div>
         </div>
     </div>
-
     <script>
         let horarios = [];
-
         function showTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(t => t.classList.add('hidden'));
             document.getElementById(tabId).classList.remove('hidden');
         }
-
         fetch('/getStatus').then(res => res.json()).then(data => {
             if(data.configurado) {
                 document.getElementById('main-app').classList.remove('hidden');
                 document.getElementById('stock-val').innerText = data.estoque;
                 horarios = data.horarios || [];
                 renderHorarios();
-            } else {
-                document.getElementById('activation-screen').classList.remove('hidden');
-            }
+            } else { document.getElementById('activation-screen').classList.remove('hidden'); }
         });
-
         function renderHorarios() {
             horarios.sort((a, b) => a.localeCompare(b));
-            const htmlEdit = horarios.map((h, index) => `
-                <div class="horario-item">
-                    <strong>${h}</strong>
-                    <button class="btn btn-danger" onclick="removerHorario(${index})">X</button>
-                </div>
-            `).join('');
+            const htmlEdit = horarios.map((h, index) => `<div class="horario-item"><strong>${h}</strong><button class="btn btn-danger" onclick="removerHorario(${index})">X</button></div>`).join('');
             const htmlHome = horarios.map(h => `<div class="horario-item">⏰ ${h}</div>`).join('');
             document.getElementById('lista-horarios-edit').innerHTML = htmlEdit || "<p>Nenhum horário cadastrado.</p>";
             document.getElementById('lista-horarios-home').innerHTML = htmlHome || "<p>Sem alarmes ativos.</p>";
         }
-
         function addHorario() {
             const val = document.getElementById('novo-horario').value;
-            if(val && !horarios.includes(val)) {
-                horarios.push(val);
-                renderHorarios();
-                document.getElementById('novo-horario').value = "";
-            }
+            if(val && !horarios.includes(val)) { horarios.push(val); renderHorarios(); document.getElementById('novo-horario').value = ""; }
         }
-
-        function removerHorario(index) {
-            horarios.splice(index, 1);
-            renderHorarios();
-        }
-
+        function removerHorario(index) { horarios.splice(index, 1); renderHorarios(); }
         function salvarCronograma() {
-            fetch('/saveCronograma', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ horarios: horarios })
-            }).then(() => alert('Agenda Atualizada!'));
+            fetch('/saveCronograma', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ horarios: horarios }) }).then(() => alert('Agenda Atualizada!'));
         }
-
         function salvarConfig() {
-            let s = encodeURIComponent(document.getElementById('wifi_ssid').value);
-            let p = encodeURIComponent(document.getElementById('wifi_pass').value);
-            let t = encodeURIComponent(document.getElementById('tutor_id_input').value);
-            fetch(`/saveConfig?ssid=${s}&pass=${p}&tutor=${t}`).then(() => {
-                alert("Salvo! Reiniciando..."); setTimeout(() => location.reload(), 5000);
-            });
+            let s = encodeURIComponent(document.getElementById('wifi_ssid').value); let p = encodeURIComponent(document.getElementById('wifi_pass').value); let t = encodeURIComponent(document.getElementById('tutor_id_input').value);
+            fetch(`/saveConfig?ssid=${s}&pass=${p}&tutor=${t}`).then(() => { alert("Salvo! Reiniciando..."); setTimeout(() => location.reload(), 5000); });
         }
-
         function updateStock() {
-            let val = document.getElementById('add-stock').value;
-            fetch(`/setEstoque?valor=${val}`).then(() => location.reload());
+            let val = document.getElementById('add-stock').value; fetch(`/setEstoque?valor=${val}`).then(() => location.reload());
         }
     </script>
 </body>
@@ -219,7 +196,7 @@ const char index_html[] PROGMEM = R"rawliteral(
 )rawliteral";
 
 // ======================================================================
-// LÓGICA DE PERSISTÊNCIA (LITTLEFS) E RTC
+// LÓGICA DE PERSISTÊNCIA E TELEGRAM (MANTIDAS)
 // ======================================================================
 
 void carregarConfiguracoes() {
@@ -234,7 +211,6 @@ void carregarConfiguracoes() {
             estoqueTotal = doc["estoque"].as<int>() | 0;
             modoDebug = doc["debug"] | true; 
             configurado = true;
-
             totalDoses = 0;
             JsonArray arr = doc["horarios"];
             for (JsonVariant v : arr) {
@@ -253,21 +229,11 @@ void carregarConfiguracoes() {
 
 void salvarEstoqueEDebug() {
     File file = LittleFS.open("/config.json", "r");
-    JsonDocument doc; 
-    deserializeJson(doc, file);
-    file.close();
-    
-    doc["estoque"] = estoqueTotal;
-    doc["debug"] = modoDebug; 
-    
-    file = LittleFS.open("/config.json", "w");
-    serializeJson(doc, file);
-    file.close();
+    JsonDocument doc; deserializeJson(doc, file); file.close();
+    doc["estoque"] = estoqueTotal; doc["debug"] = modoDebug; 
+    file = LittleFS.open("/config.json", "w"); serializeJson(doc, file); file.close();
 }
 
-// ======================================================================
-// TELEGRAM: MENSAGENS E COMANDOS
-// ======================================================================
 void enviarMensagemTelegram(String texto, bool isLogRestrito = false) {
     if (tutor_id != "" && WiFi.status() == WL_CONNECTED) {
         if (isLogRestrito && !modoDebug) return; 
@@ -282,25 +248,15 @@ void tratarMensagensTelegram(int numNovasMensagens) {
         
         if (chat_id != tutor_id) { bot.sendMessage(chat_id, "🚫 Acesso Negado.", ""); continue; }
 
-        if (text == "/start") {
-            bot.sendMessage(chat_id, "🤖 Olá! Sou o MedDispenser.\nEnvie /informacoes para status.", "");
-        } 
+        if (text == "/start") { bot.sendMessage(chat_id, "🤖 Olá! Sou o MedDispenser.\nEnvie /informacoes para status.", ""); } 
         else if (text == "/informacoes") {
-            String resposta = "📋 Status do Sistema\n";
-            resposta += "📦 Estoque: " + String(estoqueTotal) + " pílulas\n";
-            resposta += "🕒 Alertas programados: " + String(totalDoses) + "\n";
-            
-            DateTime now = rtc.now();
-            char horaAtual[20];
-            sprintf(horaAtual, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
-            resposta += "🕰️ Hora do RTC: " + String(horaAtual) + "\n";
-            
-            resposta += "🔧 Modo Debug: " + String(modoDebug ? "ATIVADO" : "DESATIVADO");
+            String resposta = "📋 Status do Sistema\n📦 Estoque: " + String(estoqueTotal) + " pílulas\n🕒 Alertas programados: " + String(totalDoses) + "\n";
+            DateTime now = rtc.now(); char horaAtual[20]; sprintf(horaAtual, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
+            resposta += "🕰️ Hora do RTC: " + String(horaAtual) + "\n🔧 Modo Debug: " + String(modoDebug ? "ATIVADO" : "DESATIVADO");
             bot.sendMessage(chat_id, resposta, "");
         }
         else if (text == "/debug") {
-            modoDebug = !modoDebug;
-            salvarEstoqueEDebug(); 
+            modoDebug = !modoDebug; salvarEstoqueEDebug(); 
             if (modoDebug) bot.sendMessage(chat_id, "🔧 Modo Debug ATIVADO.", "");
             else bot.sendMessage(chat_id, "🔇 Modo Debug DESATIVADO.", "");
         }
@@ -308,7 +264,7 @@ void tratarMensagensTelegram(int numNovasMensagens) {
 }
 
 // ======================================================================
-// LÓGICA CENTRAL: DISPENSAÇÃO (AGORA COM SEMÁFORO)
+// LÓGICA CENTRAL: DISPENSAÇÃO (COM SEMÁFORO E ÁUDIO)
 // ======================================================================
 
 void executarCicloDispencacao(String motivo) {
@@ -317,8 +273,6 @@ void executarCicloDispencacao(String motivo) {
     
     // Inicia a operação: Luz Amarela (Preparando/Girando)
     atualizarSemaforo(LOW, HIGH, LOW); 
-    
-    // Garante que o status do copo está resetado para esse novo ciclo
     esperandoRetiradaCopo = false; 
 
     for (int tentativa = 1; tentativa <= 2; tentativa++) {
@@ -343,14 +297,23 @@ void executarCicloDispencacao(String motivo) {
         if (estoqueTotal > 0) estoqueTotal--;
         salvarEstoqueEDebug(); 
         
-        // Pílula caiu: Luz Verde e entra no modo de espera do copo
+        // Pílula caiu: Luz Verde 
         atualizarSemaforo(LOW, LOW, HIGH); 
-        esperandoRetiradaCopo = true; 
         
+        // --- 3 BIPS LONGOS (Sucesso) ---
+        // 500ms ligado, 300ms de pausa
+        tocarBuzzer(3, 500, 300);
+        
+        esperandoRetiradaCopo = true; 
         enviarMensagemTelegram("✅ SUCESSO! Pílula detectada.\n📦 Novo estoque: " + String(estoqueTotal), true);
     } else {
-        // Falha Total: Luz Vermelha até intervenção manual (apertar botão BOOT)
+        // Falha Total: Luz Vermelha
         atualizarSemaforo(HIGH, LOW, LOW); 
+        
+        // --- 5 BIPS RÁPIDOS (Erro Crítico) ---
+        // 100ms ligado, 100ms de pausa
+        tocarBuzzer(5, 100, 100);
+        
         enviarMensagemTelegram("🚨 ERRO CRÍTICO!\nO motor girou 2 vezes e a pílula não caiu.", false);
     }
 }
@@ -370,10 +333,12 @@ void setup() {
     pinMode(pinoLedR, OUTPUT);
     pinMode(pinoLedY, OUTPUT);
     pinMode(pinoLedG, OUTPUT);
+    pinMode(pinoBuzzer, OUTPUT); // Declaração do pino do buzzer
     pinMode(pinoMicroSwitch, INPUT_PULLUP);
 
-    // Estado Inicial: Tudo apagado
+    // Estado Inicial: Tudo apagado/silencioso
     atualizarSemaforo(LOW, LOW, LOW);
+    digitalWrite(pinoBuzzer, LOW);
 
     motorDispenser.setPeriodHertz(50);    
     motorDispenser.attach(pinoMotor, 500, 2400); 
@@ -411,17 +376,15 @@ void setup() {
         }
     }
 
-    // Rotas da Web API
+    // Rotas da Web API (Idêntico)
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){ request->send_P(200, "text/html", index_html); });
-    server.on("/getStatus", HTTP_GET, [](AsyncWebServerRequest *request){ /* ... mantido ... */ 
+    server.on("/getStatus", HTTP_GET, [](AsyncWebServerRequest *request){ 
         JsonDocument doc; doc["configurado"] = configurado; doc["tutor_id"] = tutor_id; doc["estoque"] = estoqueTotal;
         JsonArray arr = doc["horarios"].to<JsonArray>();
-        for (int i = 0; i < totalDoses; i++) {
-            char buffer[6]; sprintf(buffer, "%02d:%02d", cronograma[i].hora, cronograma[i].minuto); arr.add(String(buffer));
-        }
+        for (int i = 0; i < totalDoses; i++) { char buffer[6]; sprintf(buffer, "%02d:%02d", cronograma[i].hora, cronograma[i].minuto); arr.add(String(buffer)); }
         String res; serializeJson(doc, res); request->send(200, "application/json", res);
     });
-    server.on("/saveConfig", HTTP_GET, [](AsyncWebServerRequest *request){ /* ... mantido ... */
+    server.on("/saveConfig", HTTP_GET, [](AsyncWebServerRequest *request){ 
         JsonDocument doc; doc["ssid"] = request->hasParam("ssid") ? request->getParam("ssid")->value() : "";
         doc["password"] = request->hasParam("pass") ? request->getParam("pass")->value() : "";
         doc["tutor_id"] = request->hasParam("tutor") ? request->getParam("tutor")->value() : "";
@@ -429,11 +392,11 @@ void setup() {
         File file = LittleFS.open("/config.json", "w"); serializeJson(doc, file); file.close();
         request->send(200, "text/plain", "OK"); resetPendente = true; tempoReset = millis();
     });
-    server.on("/setEstoque", HTTP_GET, [](AsyncWebServerRequest *request){ /* ... mantido ... */
+    server.on("/setEstoque", HTTP_GET, [](AsyncWebServerRequest *request){ 
         estoqueTotal = request->hasParam("valor") ? request->getParam("valor")->value().toInt() : 0;
         salvarEstoqueEDebug(); request->send(200, "text/plain", "OK");
     });
-    server.onRequestBody([](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){ /* ... mantido ... */
+    server.onRequestBody([](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){ 
         if (request->url() == "/saveCronograma") {
             JsonDocument reqDoc; deserializeJson(reqDoc, (const char*)data);
             File file = LittleFS.open("/config.json", "r"); JsonDocument fileDoc; deserializeJson(fileDoc, file); file.close();
@@ -449,7 +412,6 @@ void setup() {
 void loop() {
     if (resetPendente && (millis() - tempoReset > 2000)) ESP.restart();
 
-    // Verificação de Agendamento (Sempre verifica o RTC Local)
     static unsigned long ultimaVerificacaoHora = 0;
     if (millis() - ultimaVerificacaoHora > 30000) {
         ultimaVerificacaoHora = millis();
@@ -470,29 +432,26 @@ void loop() {
         }
     }
 
-    // --- NOVA LÓGICA: DETECÇÃO DE RETIRADA DO COPO ---
     if (esperandoRetiradaCopo) {
-        // Se o pino for HIGH (Significa que o circuito abriu, o copo saiu)
-        // OBS: Para testar na bancada sem o switch, puxe o fio do GND que está no pino 33!
         if (digitalRead(pinoMicroSwitch) == HIGH) {
-            delay(100); // Anti-bounce simples
+            delay(100); 
             if (digitalRead(pinoMicroSwitch) == HIGH) {
                 atualizarSemaforo(LOW, LOW, LOW); // Apaga as luzes
-                esperandoRetiradaCopo = false;
                 
-                // Futura implementação: Cancelar o alarme de 10 minutos entra aqui!
+                // Um bip rápido de confirmação ao tirar o copo!
+                tocarBuzzer(1, 150, 0); 
+                
+                esperandoRetiradaCopo = false;
                 enviarMensagemTelegram("✅ Confirmação: O paciente retirou o copo de medicamento.", true);
             }
         }
     }
 
-    // Acionamento Manual / Intervenção após Falha (Limpa a luz Vermelha)
     if (digitalRead(botaoBoot) == LOW) {
         delay(200); 
         executarCicloDispencacao("Acionamento Manual (Botão Placa)");
     }
 
-    // Polling do Telegram
     if (millis() - lastTimeBotRan > botRequestDelay) {
         int numNovasMensagens = bot.getUpdates(bot.last_message_received + 1);
         while (numNovasMensagens) {
