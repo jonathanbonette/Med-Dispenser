@@ -56,7 +56,7 @@ bool esperandoRetiradaCopo = false;
 unsigned long tempoSucessoDispencacao = 0;
 bool alertaEsquecimentoDisparado = false;
 int contadorBipsEsquecimento = 0; // Novo contador
-const unsigned long TIMEOUT_ESQUECIMENTO = 10000; // 10 minutos (teste com 10000 para 10s)
+const unsigned long TIMEOUT_ESQUECIMENTO = 600000; // 10 minutos (Debug: 10000 para 10s)
 
 // --- REGRA DE NEGÓCIO: AGENDAMENTO ---
 struct Dose {
@@ -103,98 +103,190 @@ const char index_html[] PROGMEM = R"rawliteral(
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MedDispenser Pro</title>
     <style>
-        :root { --primary: #2c3e50; --secondary: #3498db; --success: #27ae60; --danger: #e74c3c; --light: #ecf0f1; }
-        body { font-family: 'Segoe UI', sans-serif; margin: 0; background: var(--light); color: var(--primary); }
-        nav { background: var(--primary); color: white; padding: 1rem; display: flex; justify-content: space-around; position: sticky; top: 0; }
-        nav a { color: white; text-decoration: none; font-weight: bold; cursor: pointer; }
-        .container { max-width: 500px; margin: 20px auto; padding: 20px; }
-        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        input, select { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
-        .btn { border: none; padding: 12px 25px; border-radius: 8px; cursor: pointer; font-size: 1rem; width: 100%; transition: 0.3s; margin-top: 10px; color: white;}
+        :root { --primary: #2c3e50; --secondary: #3498db; --success: #27ae60; --warning: #f39c12; --danger: #e74c3c; --light: #ecf0f1; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background: #f4f7f6; color: var(--primary); }
+        nav { background: var(--primary); color: white; padding: 1rem; display: flex; justify-content: space-around; position: sticky; top: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); z-index: 10; }
+        nav a { color: white; text-decoration: none; font-weight: bold; cursor: pointer; padding: 5px 15px; border-radius: 20px; transition: 0.3s; }
+        nav a:hover { background: rgba(255,255,255,0.2); }
+        .container { max-width: 550px; margin: 20px auto; padding: 0 15px; }
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .card h2, .card h3 { margin-top: 0; color: var(--primary); border-bottom: 2px solid var(--light); padding-bottom: 10px; }
+        input, select { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 1rem; transition: border-color 0.3s; }
+        input:focus { border-color: var(--secondary); outline: none; }
+        .btn { border: none; padding: 12px 25px; border-radius: 8px; cursor: pointer; font-size: 1rem; width: 100%; transition: transform 0.1s, opacity 0.3s; margin-top: 10px; color: white; font-weight: bold; }
+        .btn:active { transform: scale(0.98); }
         .btn-success { background: var(--success); }
+        .btn-success:hover { opacity: 0.9; }
         .btn-primary { background: var(--secondary); }
-        .btn-danger { background: var(--danger); padding: 5px 10px; width: auto; margin: 0;}
+        .btn-primary:hover { opacity: 0.9; }
+        .btn-danger { background: var(--danger); padding: 6px 12px; width: auto; margin: 0; border-radius: 6px; }
         .hidden { display: none !important; }
-        .horario-item { display: flex; justify-content: space-between; align-items: center; background: #f8f9fa; padding: 10px; border-radius: 6px; margin-bottom: 5px; border: 1px solid #ddd;}
+        .horario-item { display: flex; justify-content: space-between; align-items: center; background: #f8f9fa; padding: 12px 15px; border-radius: 8px; margin-bottom: 8px; border: 1px solid #eee; font-size: 1.1rem; }
+        
+        /* Cores Dinâmicas do Estoque */
+        .stock-good { color: var(--success); }
+        .stock-warning { color: var(--warning); }
+        .stock-danger { color: var(--danger); }
+        
+        /* Info Device */
+        .device-info { display: flex; justify-content: space-between; font-size: 0.9rem; color: #7f8c8d; margin-bottom: 15px; }
+        
+        /* Toast Notification */
+        #toast { visibility: hidden; min-width: 250px; background-color: #34495e; color: #fff; text-align: center; border-radius: 8px; padding: 16px; position: fixed; z-index: 100; left: 50%; bottom: 30px; transform: translateX(-50%); font-size: 1rem; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.2); opacity: 0; transition: opacity 0.3s, bottom 0.3s; }
+        #toast.show { visibility: visible; opacity: 1; bottom: 50px; }
     </style>
 </head>
 <body>
     <div id="activation-screen" class="hidden">
         <div style="text-align: center; padding: 50px 20px;">
-            <h1>MedDispenser Setup</h1>
+            <h1 style="color: var(--primary);">⚙️ Setup MedDispenser</h1>
+            <p>Conecte o dispositivo à rede local.</p>
             <input type="text" id="wifi_ssid" placeholder="Nome do seu Wi-Fi">
             <input type="password" id="wifi_pass" placeholder="Senha do Wi-Fi">
             <input type="number" id="tutor_id_input" placeholder="Seu ID do Telegram">
-            <button class="btn btn-success" onclick="salvarConfig()">Ativar</button>
+            <button class="btn btn-success" onclick="salvarConfig()">Ativar Dispositivo</button>
         </div>
     </div>
+
     <div id="main-app" class="hidden">
         <nav>
-            <a onclick="showTab('home')">Status</a>
-            <a onclick="showTab('config')">Ajustes</a>
+            <a onclick="showTab('home')">📊 Status</a>
+            <a onclick="showTab('config')">⚙️ Ajustes</a>
         </nav>
+        
         <div class="container">
             <div id="home" class="tab-content">
                 <div class="card">
+                    <div class="device-info">
+                        <span>Status: <strong style="color: var(--success);">Online</strong></span>
+                        <span id="device-time">Hora: --:--</span>
+                    </div>
                     <h2>Visão Geral</h2>
-                    <p>📦 Estoque: <strong id="stock-val" style="font-size: 1.5em; color: var(--success);">--</strong></p>
-                    <p>🕒 Próximos Disparos:</p>
+                    <p style="font-size: 1.2rem;">📦 Estoque Atual: <strong id="stock-val" style="font-size: 1.8em;">--</strong></p>
+                    <h3 style="margin-top: 25px;">🕒 Próximos Disparos</h3>
                     <div id="lista-horarios-home">Carregando...</div>
                 </div>
             </div>
+
             <div id="config" class="tab-content hidden">
                 <div class="card">
-                    <h3>Abastecimento</h3>
-                    <input type="number" id="add-stock" placeholder="Novo total de pílulas na gaveta">
-                    <button class="btn btn-success" onclick="updateStock()">Salvar Estoque</button>
+                    <h3>📦 Abastecimento</h3>
+                    <p style="font-size: 0.9rem; color: #7f8c8d;">Insira a quantidade total de pílulas colocadas no reservatório.</p>
+                    <input type="number" id="add-stock" placeholder="Ex: 30">
+                    <button class="btn btn-success" onclick="updateStock()">Confirmar Abastecimento</button>
                 </div>
+
                 <div class="card">
-                    <h3>Cronograma de Doses</h3>
-                    <div style="display: flex; gap: 10px;">
+                    <h3>⏰ Cronograma de Doses</h3>
+                    <div style="display: flex; gap: 10px; align-items: center;">
                         <input type="time" id="novo-horario">
-                        <button class="btn btn-primary" style="width: auto;" onclick="addHorario()">Adicionar</button>
+                        <button class="btn btn-primary" style="width: auto; margin-top: 0;" onclick="addHorario()">Adicionar</button>
                     </div>
-                    <div id="lista-horarios-edit" style="margin-top: 15px;"></div>
-                    <button class="btn btn-success" onclick="salvarCronograma()">Salvar Agenda</button>
+                    <div id="lista-horarios-edit" style="margin-top: 20px;"></div>
+                    <button class="btn btn-success" style="margin-top: 15px;" onclick="salvarCronograma()">Salvar na Memória</button>
                 </div>
             </div>
         </div>
     </div>
+
+    <div id="toast"></div>
+
     <script>
         let horarios = [];
+
+        function showToast(message) {
+            const toast = document.getElementById("toast");
+            toast.innerText = message;
+            toast.className = "show";
+            setTimeout(function(){ toast.className = toast.className.replace("show", ""); }, 3000);
+        }
+
         function showTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(t => t.classList.add('hidden'));
             document.getElementById(tabId).classList.remove('hidden');
         }
-        fetch('/getStatus').then(res => res.json()).then(data => {
-            if(data.configurado) {
-                document.getElementById('main-app').classList.remove('hidden');
-                document.getElementById('stock-val').innerText = data.estoque;
-                horarios = data.horarios || [];
-                renderHorarios();
-            } else { document.getElementById('activation-screen').classList.remove('hidden'); }
-        });
+
+        fetch('/getStatus')
+            .then(res => res.json())
+            .then(data => {
+                if(data.configurado) {
+                    document.getElementById('main-app').classList.remove('hidden');
+                    
+                    // Atualiza a hora do dispositivo
+                    if(data.hora_rtc) document.getElementById('device-time').innerText = "Hora: " + data.hora_rtc;
+
+                    // Lógica de Cor do Estoque
+                    let stockEl = document.getElementById('stock-val');
+                    stockEl.innerText = data.estoque;
+                    stockEl.className = ""; // Limpa classes antigas
+                    if (data.estoque <= 3) {
+                        stockEl.classList.add('stock-danger');
+                    } else if (data.estoque <= 10) {
+                        stockEl.classList.add('stock-warning');
+                    } else {
+                        stockEl.classList.add('stock-good');
+                    }
+
+                    horarios = data.horarios || [];
+                    renderHorarios();
+                } else { 
+                    document.getElementById('activation-screen').classList.remove('hidden'); 
+                }
+            });
+
         function renderHorarios() {
             horarios.sort((a, b) => a.localeCompare(b));
-            const htmlEdit = horarios.map((h, index) => `<div class="horario-item"><strong>${h}</strong><button class="btn btn-danger" onclick="removerHorario(${index})">X</button></div>`).join('');
+            const htmlEdit = horarios.map((h, index) => `
+                <div class="horario-item">
+                    <strong>${h}</strong>
+                    <button class="btn btn-danger" onclick="removerHorario(${index})">X</button>
+                </div>
+            `).join('');
             const htmlHome = horarios.map(h => `<div class="horario-item">⏰ ${h}</div>`).join('');
-            document.getElementById('lista-horarios-edit').innerHTML = htmlEdit || "<p>Nenhum horário cadastrado.</p>";
-            document.getElementById('lista-horarios-home').innerHTML = htmlHome || "<p>Sem alarmes ativos.</p>";
+            
+            document.getElementById('lista-horarios-edit').innerHTML = htmlEdit || "<p style='color:#7f8c8d;'>Nenhum horário cadastrado.</p>";
+            document.getElementById('lista-horarios-home').innerHTML = htmlHome || "<p style='color:#7f8c8d;'>Sem alarmes ativos no momento.</p>";
         }
+
         function addHorario() {
             const val = document.getElementById('novo-horario').value;
-            if(val && !horarios.includes(val)) { horarios.push(val); renderHorarios(); document.getElementById('novo-horario').value = ""; }
+            if(val && !horarios.includes(val)) { 
+                horarios.push(val); 
+                renderHorarios(); 
+                document.getElementById('novo-horario').value = ""; 
+            }
         }
-        function removerHorario(index) { horarios.splice(index, 1); renderHorarios(); }
+
+        function removerHorario(index) { 
+            horarios.splice(index, 1); 
+            renderHorarios(); 
+        }
+
         function salvarCronograma() {
-            fetch('/saveCronograma', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ horarios: horarios }) }).then(() => alert('Agenda Atualizada!'));
+            fetch('/saveCronograma', { 
+                method: 'POST', 
+                headers: {'Content-Type': 'application/json'}, 
+                body: JSON.stringify({ horarios: horarios }) 
+            }).then(() => showToast('✅ Agenda Salva com Sucesso!'));
         }
+
         function salvarConfig() {
-            let s = encodeURIComponent(document.getElementById('wifi_ssid').value); let p = encodeURIComponent(document.getElementById('wifi_pass').value); let t = encodeURIComponent(document.getElementById('tutor_id_input').value);
-            fetch(`/saveConfig?ssid=${s}&pass=${p}&tutor=${t}`).then(() => { alert("Salvo! Reiniciando..."); setTimeout(() => location.reload(), 5000); });
+            let s = encodeURIComponent(document.getElementById('wifi_ssid').value); 
+            let p = encodeURIComponent(document.getElementById('wifi_pass').value); 
+            let t = encodeURIComponent(document.getElementById('tutor_id_input').value);
+            fetch(`/saveConfig?ssid=${s}&pass=${p}&tutor=${t}`).then(() => { 
+                showToast("✅ Salvo! Reiniciando o aparelho..."); 
+                setTimeout(() => location.reload(), 5000); 
+            });
         }
+
         function updateStock() {
-            let val = document.getElementById('add-stock').value; fetch(`/setEstoque?valor=${val}`).then(() => location.reload());
+            let val = document.getElementById('add-stock').value; 
+            if(val === "") return;
+            fetch(`/setEstoque?valor=${val}`).then(() => {
+                showToast("📦 Estoque Atualizado!");
+                setTimeout(() => location.reload(), 1500);
+            });
         }
     </script>
 </body>
@@ -376,9 +468,23 @@ void setup() {
 
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){ request->send_P(200, "text/html", index_html); });
     server.on("/getStatus", HTTP_GET, [](AsyncWebServerRequest *request){ 
-        JsonDocument doc; doc["configurado"] = configurado; doc["tutor_id"] = tutor_id; doc["estoque"] = estoqueTotal;
+        JsonDocument doc; 
+        doc["configurado"] = configurado; 
+        doc["tutor_id"] = tutor_id; 
+        doc["estoque"] = estoqueTotal;
+        
+        // --- Envia a hora atual do RTC para o painel ---
+        DateTime now = rtc.now(); 
+        char horaAtual[6]; 
+        sprintf(horaAtual, "%02d:%02d", now.hour(), now.minute());
+        doc["hora_rtc"] = String(horaAtual);
+
         JsonArray arr = doc["horarios"].to<JsonArray>();
-        for (int i = 0; i < totalDoses; i++) { char buffer[6]; sprintf(buffer, "%02d:%02d", cronograma[i].hora, cronograma[i].minuto); arr.add(String(buffer)); }
+        for (int i = 0; i < totalDoses; i++) { 
+            char buffer[6]; 
+            sprintf(buffer, "%02d:%02d", cronograma[i].hora, cronograma[i].minuto); 
+            arr.add(String(buffer)); 
+        }
         String res; serializeJson(doc, res); request->send(200, "application/json", res);
     });
     server.on("/saveConfig", HTTP_GET, [](AsyncWebServerRequest *request){ 
