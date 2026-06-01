@@ -47,10 +47,16 @@ const int pinoLedR = 27;
 const int pinoLedY = 26;
 const int pinoLedG = 25;
 const int pinoMicroSwitch = 33; 
-const int pinoBuzzer = 5; // Novo pino para o Buzzer
+const int pinoBuzzer = 5; 
 
 volatile bool pilulaDetectada = false;
 bool esperandoRetiradaCopo = false;
+
+// --- VARIÁVEIS: CONTROLE DA TRAVA DE SEGURANÇA ---
+unsigned long tempoSucessoDispencacao = 0;
+bool alertaEsquecimentoDisparado = false;
+int contadorBipsEsquecimento = 0; // Novo contador
+const unsigned long TIMEOUT_ESQUECIMENTO = 10000; // 10 minutos (teste com 10000 para 10s)
 
 // --- REGRA DE NEGÓCIO: AGENDAMENTO ---
 struct Dose {
@@ -80,14 +86,14 @@ void tocarBuzzer(int repeticoes, int tempoLigado, int tempoDesligado) {
         digitalWrite(pinoBuzzer, HIGH);
         delay(tempoLigado);
         digitalWrite(pinoBuzzer, LOW);
-        if (i < repeticoes - 1) { // Não dá delay extra no último bip
+        if (i < repeticoes - 1) { 
             delay(tempoDesligado);
         }
     }
 }
 
 // ======================================================================
-// INTERFACE HTML (MANTIDA INTACTA)
+// INTERFACE HTML (MANTIDA)
 // ======================================================================
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -196,7 +202,7 @@ const char index_html[] PROGMEM = R"rawliteral(
 )rawliteral";
 
 // ======================================================================
-// LÓGICA DE PERSISTÊNCIA E TELEGRAM (MANTIDAS)
+// LÓGICA DE PERSISTÊNCIA E TELEGRAM
 // ======================================================================
 
 void carregarConfiguracoes() {
@@ -264,14 +270,13 @@ void tratarMensagensTelegram(int numNovasMensagens) {
 }
 
 // ======================================================================
-// LÓGICA CENTRAL: DISPENSAÇÃO (COM SEMÁFORO E ÁUDIO)
+// LÓGICA CENTRAL: DISPENSAÇÃO
 // ======================================================================
 
 void executarCicloDispencacao(String motivo) {
     enviarMensagemTelegram("💊 Iniciando Ciclo...\nMotivo: " + motivo, true);
     bool sucesso = false;
     
-    // Inicia a operação: Luz Amarela (Preparando/Girando)
     atualizarSemaforo(LOW, HIGH, LOW); 
     esperandoRetiradaCopo = false; 
 
@@ -297,23 +302,19 @@ void executarCicloDispencacao(String motivo) {
         if (estoqueTotal > 0) estoqueTotal--;
         salvarEstoqueEDebug(); 
         
-        // Pílula caiu: Luz Verde 
         atualizarSemaforo(LOW, LOW, HIGH); 
-        
-        // --- 3 BIPS LONGOS (Sucesso) ---
-        // 500ms ligado, 300ms de pausa
         tocarBuzzer(3, 500, 300);
         
+        // --- PREPARAÇÃO DO ESTADO DE ESPERA ---
         esperandoRetiradaCopo = true; 
+        tempoSucessoDispencacao = millis(); 
+        alertaEsquecimentoDisparado = false; 
+        contadorBipsEsquecimento = 0; // Zera o contador para o novo ciclo
+        
         enviarMensagemTelegram("✅ SUCESSO! Pílula detectada.\n📦 Novo estoque: " + String(estoqueTotal), true);
     } else {
-        // Falha Total: Luz Vermelha
         atualizarSemaforo(HIGH, LOW, LOW); 
-        
-        // --- 5 BIPS RÁPIDOS (Erro Crítico) ---
-        // 100ms ligado, 100ms de pausa
         tocarBuzzer(5, 100, 100);
-        
         enviarMensagemTelegram("🚨 ERRO CRÍTICO!\nO motor girou 2 vezes e a pílula não caiu.", false);
     }
 }
@@ -325,7 +326,6 @@ void executarCicloDispencacao(String motivo) {
 void setup() {
     Serial.begin(115200);
 
-    // Configuração dos Pinos
     pinMode(botaoBoot, INPUT_PULLUP);
     pinMode(pinoSensor, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(pinoSensor), sensorISR, FALLING);
@@ -333,10 +333,9 @@ void setup() {
     pinMode(pinoLedR, OUTPUT);
     pinMode(pinoLedY, OUTPUT);
     pinMode(pinoLedG, OUTPUT);
-    pinMode(pinoBuzzer, OUTPUT); // Declaração do pino do buzzer
+    pinMode(pinoBuzzer, OUTPUT); 
     pinMode(pinoMicroSwitch, INPUT_PULLUP);
 
-    // Estado Inicial: Tudo apagado/silencioso
     atualizarSemaforo(LOW, LOW, LOW);
     digitalWrite(pinoBuzzer, LOW);
 
@@ -367,7 +366,6 @@ void setup() {
             struct tm timeinfo;
             if (getLocalTime(&timeinfo)) {
                 rtc.adjust(DateTime(timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec));
-                Serial.println("✅ RTC DS3231 sincronizado via NTP da Internet.");
             }
             enviarMensagemTelegram("🤖 MedDispenser Online e Sincronizado!", true);
         } else {
@@ -376,7 +374,6 @@ void setup() {
         }
     }
 
-    // Rotas da Web API (Idêntico)
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){ request->send_P(200, "text/html", index_html); });
     server.on("/getStatus", HTTP_GET, [](AsyncWebServerRequest *request){ 
         JsonDocument doc; doc["configurado"] = configurado; doc["tutor_id"] = tutor_id; doc["estoque"] = estoqueTotal;
@@ -402,7 +399,7 @@ void setup() {
             File file = LittleFS.open("/config.json", "r"); JsonDocument fileDoc; deserializeJson(fileDoc, file); file.close();
             fileDoc["horarios"] = reqDoc["horarios"];
             file = LittleFS.open("/config.json", "w"); serializeJson(fileDoc, file); file.close();
-            carregarConfiguracoes(); request->send(200, "text/plain", "Cronograma Atualizado");
+            carregarConfiguracoes(); request->send(200, "text/plain", "Cronograma Updated");
         }
     });
 
@@ -432,17 +429,53 @@ void loop() {
         }
     }
 
+    // --- MÁQUINA DE ESTADOS: MONITORAMENTO E TRAVA COM LIMITE DE BIPS ---
     if (esperandoRetiradaCopo) {
+        
+        // 1. Sucesso: Paciente retira o copo
         if (digitalRead(pinoMicroSwitch) == HIGH) {
             delay(100); 
             if (digitalRead(pinoMicroSwitch) == HIGH) {
-                atualizarSemaforo(LOW, LOW, LOW); // Apaga as luzes
+                digitalWrite(pinoBuzzer, LOW);    
+                atualizarSemaforo(LOW, LOW, LOW); 
                 
-                // Um bip rápido de confirmação ao tirar o copo!
                 tocarBuzzer(1, 150, 0); 
                 
                 esperandoRetiradaCopo = false;
+                alertaEsquecimentoDisparado = false;
+                contadorBipsEsquecimento = 0; // Limpa o contador
                 enviarMensagemTelegram("✅ Confirmação: O paciente retirou o copo de medicamento.", true);
+            }
+        }
+        
+        // 2. Esquecimento: Estouro do tempo limite (Timeout)
+        else if (millis() - tempoSucessoDispencacao > TIMEOUT_ESQUECIMENTO) {
+            
+            if (!alertaEsquecimentoDisparado) {
+                alertaEsquecimentoDisparado = true;
+                contadorBipsEsquecimento = 0; // Prepara para iniciar as 3 sequências sonoras
+                enviarMensagemTelegram("🚨 ALERTA CRÍTICO!\nO medicamento foi liberado com sucesso, mas o paciente AINDA NÃO RETIROU o copo do dispenser após 10 minutos!", false);
+            }
+            
+            // Só apita as 3 vezes (6 alternâncias: 3 On, 3 Off)
+            if (contadorBipsEsquecimento < 6) {
+                static unsigned long ultimoFlicker = 0;
+                if (millis() - ultimoFlicker > 500) { 
+                    ultimoFlicker = millis();
+                    
+                    if (contadorBipsEsquecimento % 2 == 0) { // Estados pares: Liga tudo
+                        atualizarSemaforo(HIGH, LOW, LOW); // Vermelho aceso
+                        digitalWrite(pinoBuzzer, HIGH);    // Bipe
+                    } else { // Estados ímpares: Desliga bipe e troca pro Verde
+                        atualizarSemaforo(LOW, LOW, HIGH); // Verde aceso para chamar atenção pra pílula
+                        digitalWrite(pinoBuzzer, LOW);     // Silêncio
+                    }
+                    contadorBipsEsquecimento++;
+                }
+            } else {
+                // Fim dos 3 bipes: Crava o semáforo no Vermelho sólido e fica mudo até o copo sair
+                atualizarSemaforo(HIGH, LOW, LOW);
+                digitalWrite(pinoBuzzer, LOW);
             }
         }
     }
