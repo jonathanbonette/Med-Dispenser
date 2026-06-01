@@ -1,3 +1,12 @@
+/**
+ * @file main.cpp
+ * @brief Sistema Automatizado de Dispensação de Medicamentos (MedDispenser)
+ * @author Jonathan Chrysostomo Cabral Bonette
+ * * Implementação de arquitetura híbrida de tempo (NTP/RTC), tolerância a falhas
+ * na camada física de acionamento, máquina de estados assíncrona para monitoramento
+ * de adesão e persistência distribuída de logs de auditoria via LittleFS.
+ */
+
 #include <Arduino.h>
 #include <WiFi.h>
 #include <AsyncTCP.h>
@@ -11,22 +20,21 @@
 #include <Wire.h>
 #include "RTClib.h"
 
-// --- CONFIGURAÇÕES DE TEMPO (NTP) ---
+/* --- Definições de Infraestrutura de Rede e Tempo --- */
 const char* ntpServer = "br.pool.ntp.org"; 
-const long  gmtOffset_sec = -10800; // UTC-3
+const long  gmtOffset_sec = -10800; 
 const int   daylightOffset_sec = 0;
 
-// Instância do Servidor Web, Bot e RTC
+/* --- Instâncias de Subsistemas e Periféricos --- */
 AsyncWebServer server(80);
 #define BOT_TOKEN "8786688182:AAEPucGKr2TqNSwUycBdkxG6ZhG5BotQs1c"
 WiFiClientSecure clientTelegram;
 UniversalTelegramBot bot(BOT_TOKEN, clientTelegram);
 RTC_DS3231 rtc;
 
+/* --- Variáveis de Controle de Estado Global --- */
 int botRequestDelay = 2000; 
 unsigned long lastTimeBotRan = 0;
-
-// Variáveis Globais
 String ssid = "";
 String password = "";
 String tutor_id = "";
@@ -36,32 +44,30 @@ bool resetPendente = false;
 unsigned long tempoReset = 0;
 bool modoDebug = true; 
 
-// --- PINOS DE HARDWARE ---
+/* --- Mapeamento de Hardware (GPIOs) --- */
 Servo motorDispenser;
 const int pinoMotor = 12; 
 const int pinoSensor = 14; 
 const int botaoBoot = 0;   
-
-// Pinos do Semáforo, Copo e Áudio
 const int pinoLedR = 27;
 const int pinoLedY = 26;
 const int pinoLedG = 25;
 const int pinoMicroSwitch = 33; 
 const int pinoBuzzer = 5; 
 
+/* --- Flags Voláteis e Controle Pragmático de Estado --- */
 volatile bool pilulaDetectada = false;
 bool esperandoRetiradaCopo = false;
-
-// --- CONTROLE DA TRAVA DE SEGURANÇA E AUDITORIA ---
 unsigned long tempoSucessoDispencacao = 0;
 bool alertaEsquecimentoDisparado = false;
 int contadorBipsEsquecimento = 0; 
-const unsigned long TIMEOUT_ESQUECIMENTO = 600000; // 10 minutos (teste com 10000 para 10s)
-
-// Rastreabilidade de correspondência da dose
+const unsigned long TIMEOUT_ESQUECIMENTO = 600000; 
 String doseAtivaString = "Nenhuma"; 
 
-// --- REGRA DE NEGÓCIO: AGENDAMENTO ---
+/**
+ * @struct Dose
+ * @brief Estrutura de dados para encapsulamento de eventos cronometrados.
+ */
 struct Dose {
     int hora;
     int minuto;
@@ -72,18 +78,28 @@ const int MAX_DOSES = 10;
 Dose cronograma[MAX_DOSES];
 int totalDoses = 0; 
 
-// Interrupção do Sensor IR
+/**
+ * @brief Rotina de Interrupção (ISR) para monitoramento do feixe óptico.
+ */
 void IRAM_ATTR sensorISR() {
     pilulaDetectada = true;
 }
 
-// Helpers Visuais e Sonoros
+/**
+ * @brief Atualiza os estados lógicos das saídas do semáforo visual.
+ */
 void atualizarSemaforo(bool r, bool y, bool g) {
     digitalWrite(pinoLedR, r);
     digitalWrite(pinoLedY, y);
     digitalWrite(pinoLedG, g);
 }
 
+/**
+ * @brief Emite sinais sonoros através de modulação por tempo em pinagem digital.
+ * @param repeticoes Quantidade de bips gerados.
+ * @param tempoLigado Tempo de atividade do sinal em milissegundos.
+ * @param tempoDesligado Intervalo entre bips em milissegundos.
+ */
 void tocarBuzzer(int repeticoes, int tempoLigado, int tempoDesligado) {
     for (int i = 0; i < repeticoes; i++) {
         digitalWrite(pinoBuzzer, HIGH);
@@ -95,45 +111,41 @@ void tocarBuzzer(int repeticoes, int tempoLigado, int tempoDesligado) {
     }
 }
 
-// --- INFRAESTRUTURA DE AUDITORIA: GRAVAÇÃO DE LOGS ---
-void registrarLog(String mensagem) {
+/**
+ * @brief Persiste eventos no sistema de arquivos local com política de rotação de logs.
+ * @details Monitora a volumetria do arquivo logs.txt. Caso exceda 50KB, o arquivo antigo
+ * é promovido a backup (.old) e um novo fluxo sequencial é iniciado para preservação da Flash.
+ * @param mensagem Conteúdo nominal do log de auditoria.
+ */
+void registrarLog(String message) {
     DateTime now = rtc.now();
     char carimboTempo[30];
     sprintf(carimboTempo, "[%02d/%02d %02d:%02d:%02d] ", now.day(), now.month(), now.hour(), now.minute(), now.second());
-    String linhaLog = String(carimboTempo) + mensagem + "\n";
+    String linhaLog = String(carimboTempo) + message + "\n";
     
-    // --- INTELIGÊNCIA DE ROTAÇÃO DE LOGS ---
     if (LittleFS.exists("/logs.txt")) {
         File checkFile = LittleFS.open("/logs.txt", "r");
         size_t tamanhoAtual = checkFile.size();
         checkFile.close();
         
-        // Se o arquivo passar de 50.000 bytes (~50KB / mais de 600 linhas), rotaciona
         if (tamanhoAtual > 50000) {
-            Serial.println("⚠️ SISTEMA_LOG: Limite de 50KB atingido. Rotacionando arquivos...");
-            
+            Serial.println(F("⚠️ SISTEMA_LOG: Limite de 50KB atingido. Rotacionando arquivos..."));
             if (LittleFS.exists("/logs.old")) {
-                LittleFS.remove("/logs.old"); // Elimina o backup antigo
+                LittleFS.remove("/logs.old");
             }
-            
-            LittleFS.rename("/logs.txt", "/logs.old"); // O atual vira backup histórico
-            // Um novo /logs.txt limpo será criado automaticamente no append abaixo
+            LittleFS.rename("/logs.txt", "/logs.old");
         }
     }
-    // ----------------------------------------
     
-    // Abre (ou cria) o logs.txt e anexa a linha
     File file = LittleFS.open("/logs.txt", "a"); 
     if (file) {
         file.print(linhaLog);
         file.close();
     }
-    Serial.print("SISTEMA_LOG: " + linhaLog);
+    Serial.print("SYS_LOG: " + linhaLog);
 }
 
-// ======================================================================
-// INTERFACE HTML (AGORA COM ABA DE LOGS E SEM DEPENDÊNCIAS EXTERNAS)
-// ======================================================================
+/* --- Interface Gráfica Embarcada --- */
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="pt-br">
@@ -165,8 +177,6 @@ const char index_html[] PROGMEM = R"rawliteral(
         .device-info { display: flex; justify-content: space-between; font-size: 0.9rem; color: #7f8c8d; margin-bottom: 15px; }
         #toast { visibility: hidden; min-width: 250px; background-color: #34495e; color: #fff; text-align: center; border-radius: 8px; padding: 16px; position: fixed; z-index: 100; left: 50%; bottom: 30px; transform: translateX(-50%); font-size: 1rem; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.2); opacity: 0; transition: opacity 0.3s, bottom 0.3s; }
         #toast.show { visibility: visible; opacity: 1; bottom: 50px; }
-        
-        /* Estilo do Terminal de Logs */
         .terminal-log { background: #2c3e50; color: #2ecc71; padding: 15px; border-radius: 8px; font-family: 'Courier New', Courier, monospace; max-height: 250px; overflow-y: auto; white-space: pre-wrap; font-size: 0.9rem; line-height: 1.4; border: 1px solid #1a252f; text-align: left; }
     </style>
 </head>
@@ -247,9 +257,7 @@ const char index_html[] PROGMEM = R"rawliteral(
         function showTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(t => t.classList.add('hidden'));
             document.getElementById(tabId).classList.remove('hidden');
-            if(tabId === 'logs-tab') {
-                atualizarLogsView();
-            }
+            if(tabId === 'logs-tab') { atualizarLogsView(); }
         }
 
         function atualizarLogsView() {
@@ -258,7 +266,7 @@ const char index_html[] PROGMEM = R"rawliteral(
                 .then(res => res.text())
                 .then(text => {
                     container.innerText = text || "Nenhum log registrado ainda.";
-                    container.scrollTop = container.scrollHeight; // Auto-scroll para o final
+                    container.scrollTop = container.scrollHeight;
                 });
         }
 
@@ -325,10 +333,7 @@ const char index_html[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
-// ======================================================================
-// LÓGICA DE PERSISTÊNCIA E TELEGRAM (COM COMANDO /HISTORICO)
-// ======================================================================
-
+/* --- Subsistema de Persistência de Dados --- */
 void carregarConfiguracoes() {
     if (LittleFS.exists("/config.json")) {
         File file = LittleFS.open("/config.json", "r");
@@ -364,6 +369,7 @@ void salvarEstoqueEDebug() {
     file = LittleFS.open("/config.json", "w"); serializeJson(doc, file); file.close();
 }
 
+/* --- Subsistema M2M e Notificações (Telegram BOT) --- */
 void enviarMensagemTelegram(String texto, bool isLogRestrito = false) {
     if (tutor_id != "" && WiFi.status() == WL_CONNECTED) {
         if (isLogRestrito && !modoDebug) return; 
@@ -392,13 +398,10 @@ void tratarMensagensTelegram(int numNovasMensagens) {
             if (modoDebug) bot.sendMessage(chat_id, "🔧 Modo Debug ATIVADO.", "");
             else bot.sendMessage(chat_id, "🔇 Modo Debug DESATIVADO.", "");
         }
-        // --- NOVO COMANDO TELEGRAM: EXIBIR HISTÓRICO ---
         else if (text == "/historico") {
             if (LittleFS.exists("/logs.txt")) {
                 File file = LittleFS.open("/logs.txt", "r");
                 String conteudoLogs = "📋 Histórico de Ingestão Recente:\n\n";
-                
-                // Transfere o arquivo texto direto para a string
                 while (file.available()) {
                     conteudoLogs += (char)file.read();
                 }
@@ -411,18 +414,18 @@ void tratarMensagensTelegram(int numNovasMensagens) {
     }
 }
 
-// ======================================================================
-// LÓGICA CENTRAL: DISPENSAÇÃO (INTEGRADA COM GRAVAÇÃO DE LOGS)
-// ======================================================================
-
+/**
+ * @brief Gerencia a máquina de estados para o ciclo de rotação física do dispenser.
+ * @details Executa até duas tentativas seqüenciais de dispensação. Valida o sucesso
+ * via barreira infravermelha externa e prepara as interrupções de tempo de segurança.
+ * @param motivo Identificador do gatilho gerador do evento (Agenda nominal ou Acionamento Manual).
+ */
 void executarCicloDispencacao(String motivo) {
     enviarMensagemTelegram("💊 Iniciando Ciclo...\nMotivo: " + motivo, true);
     bool sucesso = false;
     
     atualizarSemaforo(LOW, HIGH, LOW); 
     esperandoRetiradaCopo = false; 
-
-    // Salva qual é a dose que está rodando agora para poder correlacionar no log do micro switch
     doseAtivaString = motivo; 
 
     for (int tentativa = 1; tentativa <= 2; tentativa++) {
@@ -455,25 +458,18 @@ void executarCicloDispencacao(String motivo) {
         alertaEsquecimentoDisparado = false; 
         contadorBipsEsquecimento = 0; 
         
-        // AUDITORIA: Registra a liberação bem sucedida no arquivo
         registrarLog("💊 Remédio liberado (" + doseAtivaString + ")");
-
         enviarMensagemTelegram("✅ SUCESSO! Pílula detectada.\n📦 Novo estoque: " + String(estoqueTotal), true);
     } else {
         atualizarSemaforo(HIGH, LOW, LOW); 
         tocarBuzzer(5, 100, 100);
         
-        // AUDITORIA: Registra a falha mecânica crônica
         registrarLog("🚨 FALHA CRÍTICA! Mecanismo travado (" + doseAtivaString + ")");
-
         enviarMensagemTelegram("🚨 ERRO CRÍTICO!\nO motor girou 2 vezes e a pílula não caiu.", false);
     }
 }
 
-// ======================================================================
-// SETUP E LOOP (COM AS NOVAS ROTAS DE DOWNLOAD E CLEAR DE LOGS)
-// ======================================================================
-
+/* --- Inicialização de Ciclo de Vida do Hardware (Setup) --- */
 void setup() {
     Serial.begin(115200);
 
@@ -495,7 +491,7 @@ void setup() {
     motorDispenser.write(90); 
 
     if (!rtc.begin()) {
-        Serial.println("❌ Erro: RTC DS3231 não encontrado!");
+        Serial.println(F("❌ Erro: RTC DS3231 não encontrado!"));
     } else if (rtc.lostPower()) {
         rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
     }
@@ -525,7 +521,7 @@ void setup() {
         }
     }
 
-    // --- ROTAS WEB API ---
+    /* --- Endpoints da REST API Local --- */
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){ request->send_P(200, "text/html", index_html); });
     
     server.on("/getStatus", HTTP_GET, [](AsyncWebServerRequest *request){ 
@@ -537,19 +533,13 @@ void setup() {
         String res; serializeJson(doc, res); request->send(200, "application/json", res);
     });
 
-    // Rota 1: Serve o arquivo de logs puro para o Front-end
     server.on("/getLogs", HTTP_GET, [](AsyncWebServerRequest *request){
-        if (LittleFS.exists("/logs.txt")) {
-            request->send(LittleFS, "/logs.txt", "text/plain");
-        } else {
-            request->send(200, "text/plain", "Nenhum log registrado ainda.");
-        }
+        if (LittleFS.exists("/logs.txt")) { request->send(LittleFS, "/logs.txt", "text/plain"); } 
+        else { request->send(200, "text/plain", "Nenhum log registrado ainda."); }
     });
 
-    // Rota 2: Limpa o arquivo de logs apagando do LittleFS
     server.on("/clearLogs", HTTP_GET, [](AsyncWebServerRequest *request){
-        LittleFS.remove("/logs.txt");
-        request->send(200, "text/plain", "OK");
+        LittleFS.remove("/logs.txt"); request->send(200, "text/plain", "OK");
     });
 
     server.on("/saveConfig", HTTP_GET, [](AsyncWebServerRequest *request){ 
@@ -579,9 +569,11 @@ void setup() {
     server.begin();
 }
 
+/* --- Loop Principal Assíncrono --- */
 void loop() {
     if (resetPendente && (millis() - tempoReset > 2000)) ESP.restart();
 
+    /* --- Agendador Escalar baseado no RTC Local --- */
     static unsigned long ultimaVerificacaoHora = 0;
     if (millis() - ultimaVerificacaoHora > 30000) {
         ultimaVerificacaoHora = millis();
@@ -602,35 +594,27 @@ void loop() {
         }
     }
 
-    // --- MÁQUINA DE ESTADOS: MONITORAMENTO E REGISTRO DE EVENTOS ---
+    /* --- Máquina de Estados Não-Bloqueante: Monitoramento de Adesão --- */
     if (esperandoRetiradaCopo) {
-        
         if (digitalRead(pinoMicroSwitch) == HIGH) {
             delay(100); 
             if (digitalRead(pinoMicroSwitch) == HIGH) {
                 digitalWrite(pinoBuzzer, LOW);    
                 atualizarSemaforo(LOW, LOW, LOW); 
-                
-                tmazer: tocarBuzzer(1, 150, 0); 
+                tocarBuzzer(1, 150, 0); 
                 
                 esperandoRetiradaCopo = false;
                 alertaEsquecimentoDisparado = false;
                 
-                // AUDITORIA: Amarra o exato momento da retirada à dose correspondente
                 registrarLog("✅ Copo retirado pelo paciente. (" + doseAtivaString + ")");
-
                 enviarMensagemTelegram("✅ Confirmação: O paciente retirou o copo de medicamento.", true);
             }
         }
-        
         else if (millis() - tempoSucessoDispencacao > TIMEOUT_ESQUECIMENTO) {
             if (!alertaEsquecimentoDisparado) {
                 alertaEsquecimentoDisparado = true;
                 contadorBipsEsquecimento = 0; 
-                
-                // AUDITORIA: Registra a negligência de tempo no arquivo físico
                 registrarLog("⚠️ ESQUECIMENTO! Estouro de 10 min sem retirada (" + doseAtivaString + ")");
-
                 enviarMensagemTelegram("🚨 ALERTA CRÍTICO!\nO medicamento foi liberado com sucesso, mas o paciente AINDA NÃO RETIROU o copo do dispenser após 10 minutos!", false);
             }
             
@@ -654,11 +638,13 @@ void loop() {
         }
     }
 
+    /* --- Varredura Assíncrona de Entradas Físicas (Botão Emergência) --- */
     if (digitalRead(botaoBoot) == LOW) {
         delay(200); 
         executarCicloDispencacao("Acionamento Manual (Botão Placa)");
     }
 
+    /* --- Interrogador Assíncrono de Rede (Telegram Polling) --- */
     if (millis() - lastTimeBotRan > botRequestDelay) {
         int numNovasMensagens = bot.getUpdates(bot.last_message_received + 1);
         while (numNovasMensagens) {
