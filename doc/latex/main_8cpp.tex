@@ -1,0 +1,490 @@
+\doxysection{src/\+main.cpp File Reference}
+\hypertarget{main_8cpp}{}\label{main_8cpp}\index{src/main.cpp@{src/main.cpp}}
+
+
+Sistema Automatizado de Dispensação de Medicamentos (Med\+Dispenser).  
+
+
+{\ttfamily \+\#include $<$Arduino.\+h$>$}\newline
+{\ttfamily \+\#include $<$Wi\+Fi.\+h$>$}\newline
+{\ttfamily \+\#include $<$Async\+TCP.\+h$>$}\newline
+{\ttfamily \+\#include $<$ESPAsync\+Web\+Server.\+h$>$}\newline
+{\ttfamily \+\#include $<$Little\+FS.\+h$>$}\newline
+{\ttfamily \+\#include $<$Arduino\+Json.\+h$>$}\newline
+{\ttfamily \+\#include $<$ESP32\+Servo.\+h$>$}\newline
+{\ttfamily \+\#include $<$Wi\+Fi\+Client\+Secure.\+h$>$}\newline
+{\ttfamily \+\#include $<$Universal\+Telegram\+Bot.\+h$>$}\newline
+{\ttfamily \+\#include $<$time.\+h$>$}\newline
+{\ttfamily \+\#include $<$Wire.\+h$>$}\newline
+{\ttfamily \+\#include "{}RTClib.\+h"{}}\newline
+\doxysubsubsection*{Classes}
+\begin{DoxyCompactItemize}
+\item 
+struct \doxymbox{\hyperlink{struct_dose}{Dose}}
+\begin{DoxyCompactList}\small\item\em Estrutura de dados para encapsulamento de eventos cronometrados. \end{DoxyCompactList}\end{DoxyCompactItemize}
+\doxysubsubsection*{Macros}
+\begin{DoxyCompactItemize}
+\item 
+\+\#define \doxymbox{\hyperlink{main_8cpp_a46ae855efe2974950d236ddeb7a7118a}{BOT\+\_\+\+TOKEN}}~"{}8786688182:\+AAEPuc\+GKr2\+Tq\+NSw\+Uyc\+Bdkx\+G6\+Zh\+G5\+Bot\+Qs1c"{}
+\end{DoxyCompactItemize}
+\doxysubsubsection*{Functions}
+\begin{DoxyCompactItemize}
+\item 
+Async\+Web\+Server \doxymbox{\hyperlink{main_8cpp_a85f30d66aa1231313c8553fd485b22b1}{server}} (80)
+\item 
+Universal\+Telegram\+Bot \doxymbox{\hyperlink{main_8cpp_a2e3f8601b412961d040a4f734edf6dd4}{bot}} (\doxymbox{\hyperlink{main_8cpp_a46ae855efe2974950d236ddeb7a7118a}{BOT\+\_\+\+TOKEN}}, \doxymbox{\hyperlink{main_8cpp_a9943c01f59aefaa0510bf1ae6b73ee6c}{client\+Telegram}})
+\item 
+void IRAM\+\_\+\+ATTR \doxymbox{\hyperlink{main_8cpp_a05669c7c86ba7af0d21d2a115176ce68}{sensor\+ISR}} ()
+\begin{DoxyCompactList}\small\item\em Rotina de Interrupção (ISR) para monitoramento do feixe óptico. \end{DoxyCompactList}\item 
+void \doxymbox{\hyperlink{main_8cpp_a2f6c1099c8d1712a6fa2c0a672a0f6d0}{atualizar\+Semaforo}} (bool r, bool y, bool g)
+\begin{DoxyCompactList}\small\item\em Atualiza os estados lógicos das saídas do semáforo visual. \end{DoxyCompactList}\item 
+void \doxymbox{\hyperlink{main_8cpp_ae3b1268f3e93b87354edc720fcd58683}{tocar\+Buzzer}} (int repeticoes, int tempo\+Ligado, int tempo\+Desligado)
+\begin{DoxyCompactList}\small\item\em Emite sinais sonoros através de modulação por tempo em pinagem digital. \end{DoxyCompactList}\item 
+void \doxymbox{\hyperlink{main_8cpp_ab84eb9c42759c587b2f7dce81323e7bc}{registrar\+Log}} (String message)
+\begin{DoxyCompactList}\small\item\em Persiste eventos no sistema de arquivos local com política de rotação de logs. \end{DoxyCompactList}\item 
+void \doxymbox{\hyperlink{main_8cpp_a6e650a578ce0a8972c5624262b3241f7}{carregar\+Configuracoes}} ()
+\item 
+void \doxymbox{\hyperlink{main_8cpp_a2a6b565f7c39a6f02d27682df5e888ea}{salvar\+Estoque\+EDebug}} ()
+\item 
+void \doxymbox{\hyperlink{main_8cpp_a10b73ef6458239fef6d4b5b479bf39cf}{enviar\+Mensagem\+Telegram}} (String texto, bool is\+Log\+Restrito=false)
+\item 
+void \doxymbox{\hyperlink{main_8cpp_a8e310199a25a67dfd5e006f35ac4b34b}{tratar\+Mensagens\+Telegram}} (int num\+Novas\+Mensagens)
+\item 
+void \doxymbox{\hyperlink{main_8cpp_a1e71ef5c0a1ca263f12432bf5de3ca69}{executar\+Ciclo\+Dispencacao}} (String motivo)
+\begin{DoxyCompactList}\small\item\em Gerencia a máquina de estados para o ciclo de rotação física do dispenser. \end{DoxyCompactList}\item 
+void \doxymbox{\hyperlink{main_8cpp_a4fc01d736fe50cf5b977f755b675f11d}{setup}} ()
+\item 
+void \doxymbox{\hyperlink{main_8cpp_afe461d27b9c48d5921c00d521181f12f}{loop}} ()
+\end{DoxyCompactItemize}
+\doxysubsubsection*{Variables}
+\begin{DoxyCompactItemize}
+\item 
+const char \texorpdfstring{$\ast$}{*} \doxymbox{\hyperlink{main_8cpp_a6bd950625db0f240acc63a9cb41873f6}{ntp\+Server}} = "{}br.\+pool.\+ntp.\+org"{}
+\item 
+const long \doxymbox{\hyperlink{main_8cpp_a6c7db28543c3b2ef692f8dcb63964f2b}{gmt\+Offset\+\_\+sec}} = -\/10800
+\item 
+const int \doxymbox{\hyperlink{main_8cpp_abcecff6206d272c30174ca268e2e6f0a}{daylight\+Offset\+\_\+sec}} = 0
+\item 
+Wi\+Fi\+Client\+Secure \doxymbox{\hyperlink{main_8cpp_a9943c01f59aefaa0510bf1ae6b73ee6c}{client\+Telegram}}
+\item 
+RTC\+\_\+\+DS3231 \doxymbox{\hyperlink{main_8cpp_afa042f998806fcdedab1794cebbeaad3}{rtc}}
+\item 
+int \doxymbox{\hyperlink{main_8cpp_a1d81beda4f93b284548429628ad65a4a}{bot\+Request\+Delay}} = 2000
+\item 
+unsigned long \doxymbox{\hyperlink{main_8cpp_a8cb9a0f95c171a8deca9a019c45b53e0}{last\+Time\+Bot\+Ran}} = 0
+\item 
+String \doxymbox{\hyperlink{main_8cpp_a9223d0e377e234d679946b194a81dcf3}{ssid}} = "{}"{}
+\item 
+String \doxymbox{\hyperlink{main_8cpp_acbd76b816d055b7a642c219fd9751020}{password}} = "{}"{}
+\item 
+String \doxymbox{\hyperlink{main_8cpp_a8f9f69ec8a4d796f581673465210c2eb}{tutor\+\_\+id}} = "{}"{}
+\item 
+int \doxymbox{\hyperlink{main_8cpp_a6c0aa2c321111c1903021e8c98a9f11c}{estoque\+Total}} = 0
+\item 
+bool \doxymbox{\hyperlink{main_8cpp_a9349687386cba8233591e1ccb7acc7ec}{configurado}} = false
+\item 
+bool \doxymbox{\hyperlink{main_8cpp_ad18cf3c73db85cb31607fc755e488d4c}{reset\+Pendente}} = false
+\item 
+unsigned long \doxymbox{\hyperlink{main_8cpp_a587f906d1a6be9b55feeb7923794e5c1}{tempo\+Reset}} = 0
+\item 
+bool \doxymbox{\hyperlink{main_8cpp_ae9381c3ea0d704a0c18666d36a0d1019}{modo\+Debug}} = true
+\item 
+Servo \doxymbox{\hyperlink{main_8cpp_a78c17db2f71c6ba3a8d869360d24c10e}{motor\+Dispenser}}
+\item 
+const int \doxymbox{\hyperlink{main_8cpp_a756285d8e6118f3a192bccdee58a48fb}{pino\+Motor}} = 12
+\item 
+const int \doxymbox{\hyperlink{main_8cpp_a6ea662f5637b6b4dab535d8d03ed83c7}{pino\+Sensor}} = 14
+\item 
+const int \doxymbox{\hyperlink{main_8cpp_ae0385d60bb9cfb0049f669696d05f265}{botao\+Boot}} = 0
+\item 
+const int \doxymbox{\hyperlink{main_8cpp_a6085784904170895c8e853073334f3ba}{pino\+LedR}} = 27
+\item 
+const int \doxymbox{\hyperlink{main_8cpp_adf23e382a61b78c4a562198dc8e1ed53}{pino\+LedY}} = 26
+\item 
+const int \doxymbox{\hyperlink{main_8cpp_a5b57f1acb55ae343164968da0c309b85}{pino\+LedG}} = 25
+\item 
+const int \doxymbox{\hyperlink{main_8cpp_a23e697e30230997e491a2742e24c357a}{pino\+Micro\+Switch}} = 33
+\item 
+const int \doxymbox{\hyperlink{main_8cpp_a02b42ac5381a8e7d77101e30f3b79526}{pino\+Buzzer}} = 5
+\item 
+volatile bool \doxymbox{\hyperlink{main_8cpp_a7bb18d1c6a96fc3b89cc78077602d198}{pilula\+Detectada}} = false
+\item 
+bool \doxymbox{\hyperlink{main_8cpp_aad0a5d5c641d5181e1d3e77164b6161a}{esperando\+Retirada\+Copo}} = false
+\item 
+unsigned long \doxymbox{\hyperlink{main_8cpp_a3364ff37b20a3b682215c3eaffe7eba1}{tempo\+Sucesso\+Dispencacao}} = 0
+\item 
+bool \doxymbox{\hyperlink{main_8cpp_a523c65a2ceb717c288ba932b4d8bcb22}{alerta\+Esquecimento\+Disparado}} = false
+\item 
+int \doxymbox{\hyperlink{main_8cpp_a5c2855acb13330562c60a1d0f4a43428}{contador\+Bips\+Esquecimento}} = 0
+\item 
+const unsigned long \doxymbox{\hyperlink{main_8cpp_a9127c2e4be48ff2d1c80622a15b4d106}{TIMEOUT\+\_\+\+ESQUECIMENTO}} = 600000
+\item 
+String \doxymbox{\hyperlink{main_8cpp_a3ab93a7b9605dfc7c7d9649e9aadb0c6}{dose\+Ativa\+String}} = "{}Nenhuma"{}
+\item 
+const int \doxymbox{\hyperlink{main_8cpp_ab82dbce2d0bd3be66fc9954b332c27f2}{MAX\+\_\+\+DOSES}} = 10
+\item 
+\doxymbox{\hyperlink{struct_dose}{Dose}} \doxymbox{\hyperlink{main_8cpp_ad56a36ad01145a20c5159076b0d14408}{cronograma}} \+[\doxymbox{\hyperlink{main_8cpp_ab82dbce2d0bd3be66fc9954b332c27f2}{MAX\+\_\+\+DOSES}}]\+
+\item 
+int \doxymbox{\hyperlink{main_8cpp_a98fac4264196296cd80ff33ad5f58849}{total\+Doses}} = 0
+\item 
+const char index\+\_\+html\+[$\,$]\+ \doxymbox{\hyperlink{main_8cpp_a74ae6f03d132b99a2e41ee2366bd6777}{PROGMEM}}
+\end{DoxyCompactItemize}
+
+
+\doxysubsection{Detailed Description}
+Sistema Automatizado de Dispensação de Medicamentos (Med\+Dispenser). 
+
+\begin{DoxyAuthor}{Author}
+Jonathan Chrysostomo Cabral Bonette
+\begin{DoxyItemize}
+\item Implementação de arquitetura híbrida de tempo (NTP/\+\+RTC), tolerância a falhas na camada física de acionamento, máquina de estados assíncrona para monitoramento de adesão e persistência distribuída de logs de auditoria via Little\+FS. 
+\end{DoxyItemize}
+\end{DoxyAuthor}
+
+
+\label{main_8cpp_doc-define-members}
+\Hypertarget{main_8cpp_doc-define-members}
+\doxysubsection{Macro Definition Documentation}
+\Hypertarget{main_8cpp_a46ae855efe2974950d236ddeb7a7118a}\index{main.cpp@{main.cpp}!BOT\_TOKEN@{BOT\_TOKEN}}
+\index{BOT\_TOKEN@{BOT\_TOKEN}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{BOT\_TOKEN}{BOT\_TOKEN}}
+{\footnotesize\ttfamily \label{main_8cpp_a46ae855efe2974950d236ddeb7a7118a} 
+\+\#define BOT\+\_\+\+TOKEN~"{}8786688182:\+AAEPuc\+GKr2\+Tq\+NSw\+Uyc\+Bdkx\+G6\+Zh\+G5\+Bot\+Qs1c"{}}
+
+
+
+\label{main_8cpp_doc-func-members}
+\Hypertarget{main_8cpp_doc-func-members}
+\doxysubsection{Function Documentation}
+\Hypertarget{main_8cpp_a2f6c1099c8d1712a6fa2c0a672a0f6d0}\index{main.cpp@{main.cpp}!atualizarSemaforo@{atualizarSemaforo}}
+\index{atualizarSemaforo@{atualizarSemaforo}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{atualizarSemaforo()}{atualizarSemaforo()}}
+{\footnotesize\ttfamily \label{main_8cpp_a2f6c1099c8d1712a6fa2c0a672a0f6d0} 
+void atualizar\+Semaforo (\begin{DoxyParamCaption}\item[{bool}]{r}{, }\item[{bool}]{y}{, }\item[{bool}]{g}{}\end{DoxyParamCaption})}
+
+
+
+Atualiza os estados lógicos das saídas do semáforo visual. 
+
+\Hypertarget{main_8cpp_a2e3f8601b412961d040a4f734edf6dd4}\index{main.cpp@{main.cpp}!bot@{bot}}
+\index{bot@{bot}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{bot()}{bot()}}
+{\footnotesize\ttfamily \label{main_8cpp_a2e3f8601b412961d040a4f734edf6dd4} 
+Universal\+Telegram\+Bot bot (\begin{DoxyParamCaption}\item[{\doxymbox{\hyperlink{main_8cpp_a46ae855efe2974950d236ddeb7a7118a}{BOT\+\_\+\+TOKEN}}}]{}{, }\item[{\doxymbox{\hyperlink{main_8cpp_a9943c01f59aefaa0510bf1ae6b73ee6c}{client\+Telegram}}}]{}{}\end{DoxyParamCaption})}
+
+\Hypertarget{main_8cpp_a6e650a578ce0a8972c5624262b3241f7}\index{main.cpp@{main.cpp}!carregarConfiguracoes@{carregarConfiguracoes}}
+\index{carregarConfiguracoes@{carregarConfiguracoes}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{carregarConfiguracoes()}{carregarConfiguracoes()}}
+{\footnotesize\ttfamily \label{main_8cpp_a6e650a578ce0a8972c5624262b3241f7} 
+void carregar\+Configuracoes (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption})}
+
+\Hypertarget{main_8cpp_a10b73ef6458239fef6d4b5b479bf39cf}\index{main.cpp@{main.cpp}!enviarMensagemTelegram@{enviarMensagemTelegram}}
+\index{enviarMensagemTelegram@{enviarMensagemTelegram}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{enviarMensagemTelegram()}{enviarMensagemTelegram()}}
+{\footnotesize\ttfamily \label{main_8cpp_a10b73ef6458239fef6d4b5b479bf39cf} 
+void enviar\+Mensagem\+Telegram (\begin{DoxyParamCaption}\item[{String}]{texto}{, }\item[{bool}]{is\+Log\+Restrito}{ = {\ttfamily false}}\end{DoxyParamCaption})}
+
+\Hypertarget{main_8cpp_a1e71ef5c0a1ca263f12432bf5de3ca69}\index{main.cpp@{main.cpp}!executarCicloDispencacao@{executarCicloDispencacao}}
+\index{executarCicloDispencacao@{executarCicloDispencacao}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{executarCicloDispencacao()}{executarCicloDispencacao()}}
+{\footnotesize\ttfamily \label{main_8cpp_a1e71ef5c0a1ca263f12432bf5de3ca69} 
+void executar\+Ciclo\+Dispencacao (\begin{DoxyParamCaption}\item[{String}]{motivo}{}\end{DoxyParamCaption})}
+
+
+
+Gerencia a máquina de estados para o ciclo de rotação física do dispenser. 
+
+Executa até duas tentativas seqüenciais de dispensação. Valida o sucesso via barreira infravermelha externa e prepara as interrupções de tempo de segurança. 
+\begin{DoxyParams}{Parameters}
+{\em motivo} & Identificador do gatilho gerador do evento (Agenda nominal ou Acionamento Manual). \\
+\hline
+\end{DoxyParams}
+\Hypertarget{main_8cpp_afe461d27b9c48d5921c00d521181f12f}\index{main.cpp@{main.cpp}!loop@{loop}}
+\index{loop@{loop}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{loop()}{loop()}}
+{\footnotesize\ttfamily \label{main_8cpp_afe461d27b9c48d5921c00d521181f12f} 
+void loop (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption})}
+
+\Hypertarget{main_8cpp_ab84eb9c42759c587b2f7dce81323e7bc}\index{main.cpp@{main.cpp}!registrarLog@{registrarLog}}
+\index{registrarLog@{registrarLog}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{registrarLog()}{registrarLog()}}
+{\footnotesize\ttfamily \label{main_8cpp_ab84eb9c42759c587b2f7dce81323e7bc} 
+void registrar\+Log (\begin{DoxyParamCaption}\item[{String}]{message}{}\end{DoxyParamCaption})}
+
+
+
+Persiste eventos no sistema de arquivos local com política de rotação de logs. 
+
+Monitora a volumetria do arquivo logs.\+txt. Caso exceda 50KB, o arquivo antigo é promovido a backup (.old) e um novo fluxo sequencial é iniciado para preservação da Flash. 
+\begin{DoxyParams}{Parameters}
+{\em mensagem} & Conteúdo nominal do log de auditoria. \\
+\hline
+\end{DoxyParams}
+\Hypertarget{main_8cpp_a2a6b565f7c39a6f02d27682df5e888ea}\index{main.cpp@{main.cpp}!salvarEstoqueEDebug@{salvarEstoqueEDebug}}
+\index{salvarEstoqueEDebug@{salvarEstoqueEDebug}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{salvarEstoqueEDebug()}{salvarEstoqueEDebug()}}
+{\footnotesize\ttfamily \label{main_8cpp_a2a6b565f7c39a6f02d27682df5e888ea} 
+void salvar\+Estoque\+EDebug (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption})}
+
+\Hypertarget{main_8cpp_a05669c7c86ba7af0d21d2a115176ce68}\index{main.cpp@{main.cpp}!sensorISR@{sensorISR}}
+\index{sensorISR@{sensorISR}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{sensorISR()}{sensorISR()}}
+{\footnotesize\ttfamily \label{main_8cpp_a05669c7c86ba7af0d21d2a115176ce68} 
+void IRAM\+\_\+\+ATTR sensor\+ISR (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption})}
+
+
+
+Rotina de Interrupção (ISR) para monitoramento do feixe óptico. 
+
+\Hypertarget{main_8cpp_a85f30d66aa1231313c8553fd485b22b1}\index{main.cpp@{main.cpp}!server@{server}}
+\index{server@{server}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{server()}{server()}}
+{\footnotesize\ttfamily \label{main_8cpp_a85f30d66aa1231313c8553fd485b22b1} 
+Async\+Web\+Server server (\begin{DoxyParamCaption}\item[{80}]{}{}\end{DoxyParamCaption})}
+
+\Hypertarget{main_8cpp_a4fc01d736fe50cf5b977f755b675f11d}\index{main.cpp@{main.cpp}!setup@{setup}}
+\index{setup@{setup}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{setup()}{setup()}}
+{\footnotesize\ttfamily \label{main_8cpp_a4fc01d736fe50cf5b977f755b675f11d} 
+void setup (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption})}
+
+\Hypertarget{main_8cpp_ae3b1268f3e93b87354edc720fcd58683}\index{main.cpp@{main.cpp}!tocarBuzzer@{tocarBuzzer}}
+\index{tocarBuzzer@{tocarBuzzer}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{tocarBuzzer()}{tocarBuzzer()}}
+{\footnotesize\ttfamily \label{main_8cpp_ae3b1268f3e93b87354edc720fcd58683} 
+void tocar\+Buzzer (\begin{DoxyParamCaption}\item[{int}]{repeticoes}{, }\item[{int}]{tempo\+Ligado}{, }\item[{int}]{tempo\+Desligado}{}\end{DoxyParamCaption})}
+
+
+
+Emite sinais sonoros através de modulação por tempo em pinagem digital. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em repeticoes} & Quantidade de bips gerados. \\
+\hline
+{\em tempo\+Ligado} & Tempo de atividade do sinal em milissegundos. \\
+\hline
+{\em tempo\+Desligado} & Intervalo entre bips em milissegundos. \\
+\hline
+\end{DoxyParams}
+\Hypertarget{main_8cpp_a8e310199a25a67dfd5e006f35ac4b34b}\index{main.cpp@{main.cpp}!tratarMensagensTelegram@{tratarMensagensTelegram}}
+\index{tratarMensagensTelegram@{tratarMensagensTelegram}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{tratarMensagensTelegram()}{tratarMensagensTelegram()}}
+{\footnotesize\ttfamily \label{main_8cpp_a8e310199a25a67dfd5e006f35ac4b34b} 
+void tratar\+Mensagens\+Telegram (\begin{DoxyParamCaption}\item[{int}]{num\+Novas\+Mensagens}{}\end{DoxyParamCaption})}
+
+
+
+\label{main_8cpp_doc-var-members}
+\Hypertarget{main_8cpp_doc-var-members}
+\doxysubsection{Variable Documentation}
+\Hypertarget{main_8cpp_a523c65a2ceb717c288ba932b4d8bcb22}\index{main.cpp@{main.cpp}!alertaEsquecimentoDisparado@{alertaEsquecimentoDisparado}}
+\index{alertaEsquecimentoDisparado@{alertaEsquecimentoDisparado}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{alertaEsquecimentoDisparado}{alertaEsquecimentoDisparado}}
+{\footnotesize\ttfamily \label{main_8cpp_a523c65a2ceb717c288ba932b4d8bcb22} 
+bool alerta\+Esquecimento\+Disparado = false}
+
+\Hypertarget{main_8cpp_ae0385d60bb9cfb0049f669696d05f265}\index{main.cpp@{main.cpp}!botaoBoot@{botaoBoot}}
+\index{botaoBoot@{botaoBoot}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{botaoBoot}{botaoBoot}}
+{\footnotesize\ttfamily \label{main_8cpp_ae0385d60bb9cfb0049f669696d05f265} 
+const int botao\+Boot = 0}
+
+\Hypertarget{main_8cpp_a1d81beda4f93b284548429628ad65a4a}\index{main.cpp@{main.cpp}!botRequestDelay@{botRequestDelay}}
+\index{botRequestDelay@{botRequestDelay}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{botRequestDelay}{botRequestDelay}}
+{\footnotesize\ttfamily \label{main_8cpp_a1d81beda4f93b284548429628ad65a4a} 
+int bot\+Request\+Delay = 2000}
+
+\Hypertarget{main_8cpp_a9943c01f59aefaa0510bf1ae6b73ee6c}\index{main.cpp@{main.cpp}!clientTelegram@{clientTelegram}}
+\index{clientTelegram@{clientTelegram}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{clientTelegram}{clientTelegram}}
+{\footnotesize\ttfamily \label{main_8cpp_a9943c01f59aefaa0510bf1ae6b73ee6c} 
+Wi\+Fi\+Client\+Secure client\+Telegram}
+
+\Hypertarget{main_8cpp_a9349687386cba8233591e1ccb7acc7ec}\index{main.cpp@{main.cpp}!configurado@{configurado}}
+\index{configurado@{configurado}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{configurado}{configurado}}
+{\footnotesize\ttfamily \label{main_8cpp_a9349687386cba8233591e1ccb7acc7ec} 
+bool configurado = false}
+
+\Hypertarget{main_8cpp_a5c2855acb13330562c60a1d0f4a43428}\index{main.cpp@{main.cpp}!contadorBipsEsquecimento@{contadorBipsEsquecimento}}
+\index{contadorBipsEsquecimento@{contadorBipsEsquecimento}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{contadorBipsEsquecimento}{contadorBipsEsquecimento}}
+{\footnotesize\ttfamily \label{main_8cpp_a5c2855acb13330562c60a1d0f4a43428} 
+int contador\+Bips\+Esquecimento = 0}
+
+\Hypertarget{main_8cpp_ad56a36ad01145a20c5159076b0d14408}\index{main.cpp@{main.cpp}!cronograma@{cronograma}}
+\index{cronograma@{cronograma}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{cronograma}{cronograma}}
+{\footnotesize\ttfamily \label{main_8cpp_ad56a36ad01145a20c5159076b0d14408} 
+\doxymbox{\hyperlink{struct_dose}{Dose}} cronograma\+[\doxymbox{\hyperlink{main_8cpp_ab82dbce2d0bd3be66fc9954b332c27f2}{MAX\+\_\+\+DOSES}}]\+}
+
+\Hypertarget{main_8cpp_abcecff6206d272c30174ca268e2e6f0a}\index{main.cpp@{main.cpp}!daylightOffset\_sec@{daylightOffset\_sec}}
+\index{daylightOffset\_sec@{daylightOffset\_sec}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{daylightOffset\_sec}{daylightOffset\_sec}}
+{\footnotesize\ttfamily \label{main_8cpp_abcecff6206d272c30174ca268e2e6f0a} 
+const int daylight\+Offset\+\_\+sec = 0}
+
+\Hypertarget{main_8cpp_a3ab93a7b9605dfc7c7d9649e9aadb0c6}\index{main.cpp@{main.cpp}!doseAtivaString@{doseAtivaString}}
+\index{doseAtivaString@{doseAtivaString}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{doseAtivaString}{doseAtivaString}}
+{\footnotesize\ttfamily \label{main_8cpp_a3ab93a7b9605dfc7c7d9649e9aadb0c6} 
+String dose\+Ativa\+String = "{}Nenhuma"{}}
+
+\Hypertarget{main_8cpp_aad0a5d5c641d5181e1d3e77164b6161a}\index{main.cpp@{main.cpp}!esperandoRetiradaCopo@{esperandoRetiradaCopo}}
+\index{esperandoRetiradaCopo@{esperandoRetiradaCopo}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{esperandoRetiradaCopo}{esperandoRetiradaCopo}}
+{\footnotesize\ttfamily \label{main_8cpp_aad0a5d5c641d5181e1d3e77164b6161a} 
+bool esperando\+Retirada\+Copo = false}
+
+\Hypertarget{main_8cpp_a6c0aa2c321111c1903021e8c98a9f11c}\index{main.cpp@{main.cpp}!estoqueTotal@{estoqueTotal}}
+\index{estoqueTotal@{estoqueTotal}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{estoqueTotal}{estoqueTotal}}
+{\footnotesize\ttfamily \label{main_8cpp_a6c0aa2c321111c1903021e8c98a9f11c} 
+int estoque\+Total = 0}
+
+\Hypertarget{main_8cpp_a6c7db28543c3b2ef692f8dcb63964f2b}\index{main.cpp@{main.cpp}!gmtOffset\_sec@{gmtOffset\_sec}}
+\index{gmtOffset\_sec@{gmtOffset\_sec}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{gmtOffset\_sec}{gmtOffset\_sec}}
+{\footnotesize\ttfamily \label{main_8cpp_a6c7db28543c3b2ef692f8dcb63964f2b} 
+const long gmt\+Offset\+\_\+sec = -\/10800}
+
+\Hypertarget{main_8cpp_a8cb9a0f95c171a8deca9a019c45b53e0}\index{main.cpp@{main.cpp}!lastTimeBotRan@{lastTimeBotRan}}
+\index{lastTimeBotRan@{lastTimeBotRan}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{lastTimeBotRan}{lastTimeBotRan}}
+{\footnotesize\ttfamily \label{main_8cpp_a8cb9a0f95c171a8deca9a019c45b53e0} 
+unsigned long last\+Time\+Bot\+Ran = 0}
+
+\Hypertarget{main_8cpp_ab82dbce2d0bd3be66fc9954b332c27f2}\index{main.cpp@{main.cpp}!MAX\_DOSES@{MAX\_DOSES}}
+\index{MAX\_DOSES@{MAX\_DOSES}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{MAX\_DOSES}{MAX\_DOSES}}
+{\footnotesize\ttfamily \label{main_8cpp_ab82dbce2d0bd3be66fc9954b332c27f2} 
+const int MAX\+\_\+\+DOSES = 10}
+
+\Hypertarget{main_8cpp_ae9381c3ea0d704a0c18666d36a0d1019}\index{main.cpp@{main.cpp}!modoDebug@{modoDebug}}
+\index{modoDebug@{modoDebug}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{modoDebug}{modoDebug}}
+{\footnotesize\ttfamily \label{main_8cpp_ae9381c3ea0d704a0c18666d36a0d1019} 
+bool modo\+Debug = true}
+
+\Hypertarget{main_8cpp_a78c17db2f71c6ba3a8d869360d24c10e}\index{main.cpp@{main.cpp}!motorDispenser@{motorDispenser}}
+\index{motorDispenser@{motorDispenser}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{motorDispenser}{motorDispenser}}
+{\footnotesize\ttfamily \label{main_8cpp_a78c17db2f71c6ba3a8d869360d24c10e} 
+Servo motor\+Dispenser}
+
+\Hypertarget{main_8cpp_a6bd950625db0f240acc63a9cb41873f6}\index{main.cpp@{main.cpp}!ntpServer@{ntpServer}}
+\index{ntpServer@{ntpServer}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{ntpServer}{ntpServer}}
+{\footnotesize\ttfamily \label{main_8cpp_a6bd950625db0f240acc63a9cb41873f6} 
+const char\texorpdfstring{$\ast$}{*} ntp\+Server = "{}br.\+pool.\+ntp.\+org"{}}
+
+\Hypertarget{main_8cpp_acbd76b816d055b7a642c219fd9751020}\index{main.cpp@{main.cpp}!password@{password}}
+\index{password@{password}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{password}{password}}
+{\footnotesize\ttfamily \label{main_8cpp_acbd76b816d055b7a642c219fd9751020} 
+String password = "{}"{}}
+
+\Hypertarget{main_8cpp_a7bb18d1c6a96fc3b89cc78077602d198}\index{main.cpp@{main.cpp}!pilulaDetectada@{pilulaDetectada}}
+\index{pilulaDetectada@{pilulaDetectada}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{pilulaDetectada}{pilulaDetectada}}
+{\footnotesize\ttfamily \label{main_8cpp_a7bb18d1c6a96fc3b89cc78077602d198} 
+volatile bool pilula\+Detectada = false}
+
+\Hypertarget{main_8cpp_a02b42ac5381a8e7d77101e30f3b79526}\index{main.cpp@{main.cpp}!pinoBuzzer@{pinoBuzzer}}
+\index{pinoBuzzer@{pinoBuzzer}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{pinoBuzzer}{pinoBuzzer}}
+{\footnotesize\ttfamily \label{main_8cpp_a02b42ac5381a8e7d77101e30f3b79526} 
+const int pino\+Buzzer = 5}
+
+\Hypertarget{main_8cpp_a5b57f1acb55ae343164968da0c309b85}\index{main.cpp@{main.cpp}!pinoLedG@{pinoLedG}}
+\index{pinoLedG@{pinoLedG}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{pinoLedG}{pinoLedG}}
+{\footnotesize\ttfamily \label{main_8cpp_a5b57f1acb55ae343164968da0c309b85} 
+const int pino\+LedG = 25}
+
+\Hypertarget{main_8cpp_a6085784904170895c8e853073334f3ba}\index{main.cpp@{main.cpp}!pinoLedR@{pinoLedR}}
+\index{pinoLedR@{pinoLedR}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{pinoLedR}{pinoLedR}}
+{\footnotesize\ttfamily \label{main_8cpp_a6085784904170895c8e853073334f3ba} 
+const int pino\+LedR = 27}
+
+\Hypertarget{main_8cpp_adf23e382a61b78c4a562198dc8e1ed53}\index{main.cpp@{main.cpp}!pinoLedY@{pinoLedY}}
+\index{pinoLedY@{pinoLedY}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{pinoLedY}{pinoLedY}}
+{\footnotesize\ttfamily \label{main_8cpp_adf23e382a61b78c4a562198dc8e1ed53} 
+const int pino\+LedY = 26}
+
+\Hypertarget{main_8cpp_a23e697e30230997e491a2742e24c357a}\index{main.cpp@{main.cpp}!pinoMicroSwitch@{pinoMicroSwitch}}
+\index{pinoMicroSwitch@{pinoMicroSwitch}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{pinoMicroSwitch}{pinoMicroSwitch}}
+{\footnotesize\ttfamily \label{main_8cpp_a23e697e30230997e491a2742e24c357a} 
+const int pino\+Micro\+Switch = 33}
+
+\Hypertarget{main_8cpp_a756285d8e6118f3a192bccdee58a48fb}\index{main.cpp@{main.cpp}!pinoMotor@{pinoMotor}}
+\index{pinoMotor@{pinoMotor}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{pinoMotor}{pinoMotor}}
+{\footnotesize\ttfamily \label{main_8cpp_a756285d8e6118f3a192bccdee58a48fb} 
+const int pino\+Motor = 12}
+
+\Hypertarget{main_8cpp_a6ea662f5637b6b4dab535d8d03ed83c7}\index{main.cpp@{main.cpp}!pinoSensor@{pinoSensor}}
+\index{pinoSensor@{pinoSensor}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{pinoSensor}{pinoSensor}}
+{\footnotesize\ttfamily \label{main_8cpp_a6ea662f5637b6b4dab535d8d03ed83c7} 
+const int pino\+Sensor = 14}
+
+\Hypertarget{main_8cpp_a74ae6f03d132b99a2e41ee2366bd6777}\index{main.cpp@{main.cpp}!PROGMEM@{PROGMEM}}
+\index{PROGMEM@{PROGMEM}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{PROGMEM}{PROGMEM}}
+{\footnotesize\ttfamily \label{main_8cpp_a74ae6f03d132b99a2e41ee2366bd6777} 
+const char index\+\_\+html \+[$\,$]\+ PROGMEM}
+
+\Hypertarget{main_8cpp_ad18cf3c73db85cb31607fc755e488d4c}\index{main.cpp@{main.cpp}!resetPendente@{resetPendente}}
+\index{resetPendente@{resetPendente}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{resetPendente}{resetPendente}}
+{\footnotesize\ttfamily \label{main_8cpp_ad18cf3c73db85cb31607fc755e488d4c} 
+bool reset\+Pendente = false}
+
+\Hypertarget{main_8cpp_afa042f998806fcdedab1794cebbeaad3}\index{main.cpp@{main.cpp}!rtc@{rtc}}
+\index{rtc@{rtc}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{rtc}{rtc}}
+{\footnotesize\ttfamily \label{main_8cpp_afa042f998806fcdedab1794cebbeaad3} 
+RTC\+\_\+\+DS3231 rtc}
+
+\Hypertarget{main_8cpp_a9223d0e377e234d679946b194a81dcf3}\index{main.cpp@{main.cpp}!ssid@{ssid}}
+\index{ssid@{ssid}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{ssid}{ssid}}
+{\footnotesize\ttfamily \label{main_8cpp_a9223d0e377e234d679946b194a81dcf3} 
+String ssid = "{}"{}}
+
+\Hypertarget{main_8cpp_a587f906d1a6be9b55feeb7923794e5c1}\index{main.cpp@{main.cpp}!tempoReset@{tempoReset}}
+\index{tempoReset@{tempoReset}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{tempoReset}{tempoReset}}
+{\footnotesize\ttfamily \label{main_8cpp_a587f906d1a6be9b55feeb7923794e5c1} 
+unsigned long tempo\+Reset = 0}
+
+\Hypertarget{main_8cpp_a3364ff37b20a3b682215c3eaffe7eba1}\index{main.cpp@{main.cpp}!tempoSucessoDispencacao@{tempoSucessoDispencacao}}
+\index{tempoSucessoDispencacao@{tempoSucessoDispencacao}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{tempoSucessoDispencacao}{tempoSucessoDispencacao}}
+{\footnotesize\ttfamily \label{main_8cpp_a3364ff37b20a3b682215c3eaffe7eba1} 
+unsigned long tempo\+Sucesso\+Dispencacao = 0}
+
+\Hypertarget{main_8cpp_a9127c2e4be48ff2d1c80622a15b4d106}\index{main.cpp@{main.cpp}!TIMEOUT\_ESQUECIMENTO@{TIMEOUT\_ESQUECIMENTO}}
+\index{TIMEOUT\_ESQUECIMENTO@{TIMEOUT\_ESQUECIMENTO}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{TIMEOUT\_ESQUECIMENTO}{TIMEOUT\_ESQUECIMENTO}}
+{\footnotesize\ttfamily \label{main_8cpp_a9127c2e4be48ff2d1c80622a15b4d106} 
+const unsigned long TIMEOUT\+\_\+\+ESQUECIMENTO = 600000}
+
+\Hypertarget{main_8cpp_a98fac4264196296cd80ff33ad5f58849}\index{main.cpp@{main.cpp}!totalDoses@{totalDoses}}
+\index{totalDoses@{totalDoses}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{totalDoses}{totalDoses}}
+{\footnotesize\ttfamily \label{main_8cpp_a98fac4264196296cd80ff33ad5f58849} 
+int total\+Doses = 0}
+
+\Hypertarget{main_8cpp_a8f9f69ec8a4d796f581673465210c2eb}\index{main.cpp@{main.cpp}!tutor\_id@{tutor\_id}}
+\index{tutor\_id@{tutor\_id}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{tutor\_id}{tutor\_id}}
+{\footnotesize\ttfamily \label{main_8cpp_a8f9f69ec8a4d796f581673465210c2eb} 
+String tutor\+\_\+id = "{}"{}}
+
