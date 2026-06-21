@@ -1,10 +1,11 @@
 /**
  * @file main.cpp
- * @brief Sistema Automatizado de Dispensação de Medicamentos (MedDispenser)
+ * @brief Sistema Automatizado de Dispensação de Medicamentos (MedDispenser Pro)
  * @author Jonathan Chrysostomo Cabral Bonette
  * * Implementação de arquitetura híbrida de tempo (NTP/RTC), tolerância a falhas
  * na camada física de acionamento, máquina de estados assíncrona para monitoramento
  * de adesão e persistência distribuída de logs de auditoria via LittleFS.
+ * * Suporte a Duplo Compartimento de Dispensação.
  */
 
 #include <Arduino.h>
@@ -38,7 +39,11 @@ unsigned long lastTimeBotRan = 0;
 String ssid = "";
 String password = "";
 String tutor_id = "";
-int estoqueTotal = 0;
+
+// Estoques individualizados
+int estoqueRemedio1 = 0;
+int estoqueRemedio2 = 0;
+
 bool configurado = false;
 bool resetPendente = false;
 unsigned long tempoReset = 0;
@@ -71,6 +76,7 @@ String doseAtivaString = "Nenhuma";
 struct Dose {
     int hora;
     int minuto;
+    int tipo;
     bool processada; 
 };
 
@@ -206,7 +212,7 @@ const char index_html[] PROGMEM = R"rawliteral(
                         <span id="device-time">Hora: --:--</span>
                     </div>
                     <h2>Visão Geral</h2>
-                    <p style="font-size: 1.2rem;">📦 Estoque Atual: <strong id="stock-val" style="font-size: 1.8em;">--</strong></p>
+                    <p style="font-size: 1.2rem;">📦 Estoque: <span id="stock-val">--</span></p>
                     <h3 style="margin-top: 25px;">🕒 Próximos Disparos</h3>
                     <div id="lista-horarios-home">Carregando...</div>
                 </div>
@@ -215,13 +221,26 @@ const char index_html[] PROGMEM = R"rawliteral(
             <div id="config" class="tab-content hidden">
                 <div class="card">
                     <h3>📦 Abastecimento</h3>
-                    <input type="number" id="add-stock" placeholder="Ex: 30">
+                    <div style="display: flex; gap: 10px;">
+                        <div style="flex: 1;">
+                            <label style="font-size: 0.9em; font-weight: bold; color: #7f8c8d;">Remédio 1</label>
+                            <input type="number" id="add-stock-1" placeholder="Qtd">
+                        </div>
+                        <div style="flex: 1;">
+                            <label style="font-size: 0.9em; font-weight: bold; color: #7f8c8d;">Remédio 2</label>
+                            <input type="number" id="add-stock-2" placeholder="Qtd">
+                        </div>
+                    </div>
                     <button class="btn btn-success" onclick="updateStock()">Confirmar Abastecimento</button>
                 </div>
 
                 <div class="card">
                     <h3>⏰ Cronograma de Doses</h3>
                     <div style="display: flex; gap: 10px; align-items: center;">
+                        <select id="novo-tipo" style="width: auto;">
+                            <option value="1">Remédio 1</option>
+                            <option value="2">Remédio 2</option>
+                        </select>
                         <input type="time" id="novo-horario">
                         <button class="btn btn-primary" style="width: auto; margin-top: 0;" onclick="addHorario()">Adicionar</button>
                     </div>
@@ -287,11 +306,7 @@ const char index_html[] PROGMEM = R"rawliteral(
                     if(data.hora_rtc) document.getElementById('device-time').innerText = "Hora: " + data.hora_rtc;
 
                     let stockEl = document.getElementById('stock-val');
-                    stockEl.innerText = data.estoque;
-                    stockEl.className = ""; 
-                    if (data.estoque <= 3) stockEl.classList.add('stock-danger');
-                    else if (data.estoque <= 10) stockEl.classList.add('stock-warning');
-                    else stockEl.classList.add('stock-good');
+                    stockEl.innerHTML = `<strong style="color: var(--secondary);">R1:</strong> ${data.estoque1} | <strong style="color: var(--primary);">R2:</strong> ${data.estoque2}`;
 
                     horarios = data.horarios || [];
                     renderHorarios();
@@ -301,16 +316,27 @@ const char index_html[] PROGMEM = R"rawliteral(
             });
 
         function renderHorarios() {
-            horarios.sort((a, b) => a.localeCompare(b));
-            const htmlEdit = horarios.map((h, index) => `<div class="horario-item"><strong>${h}</strong><button class="btn btn-danger" onclick="removerHorario(${index})">X</button></div>`).join('');
-            const htmlHome = horarios.map(h => `<div class="horario-item">⏰ ${h}</div>`).join('');
+            horarios.sort((a, b) => {
+                if(a.h === b.h) return a.t - b.t;
+                return a.h.localeCompare(b.h);
+            });
+            const htmlEdit = horarios.map((item, index) => `<div class="horario-item"><strong>Remédio ${item.t} - ${item.h}</strong><button class="btn btn-danger" onclick="removerHorario(${index})">X</button></div>`).join('');
+            const htmlHome = horarios.map(item => `<div class="horario-item">💊 Remédio ${item.t} ⏰ ${item.h}</div>`).join('');
             document.getElementById('lista-horarios-edit').innerHTML = htmlEdit || "<p style='color:#7f8c8d;'>Nenhum horário cadastrado.</p>";
             document.getElementById('lista-horarios-home').innerHTML = htmlHome || "<p style='color:#7f8c8d;'>Sem alarmes ativos no momento.</p>";
         }
 
         function addHorario() {
             const val = document.getElementById('novo-horario').value;
-            if(val && !horarios.includes(val)) { horarios.push(val); renderHorarios(); document.getElementById('novo-horario').value = ""; }
+            const tipoVal = parseInt(document.getElementById('novo-tipo').value);
+            if(val) {
+                const exists = horarios.some(h => h.h === val && h.t === tipoVal);
+                if(!exists) { 
+                    horarios.push({t: tipoVal, h: val}); 
+                    renderHorarios(); 
+                    document.getElementById('novo-horario').value = ""; 
+                }
+            }
         }
         function removerHorario(index) { horarios.splice(index, 1); renderHorarios(); }
 
@@ -324,9 +350,15 @@ const char index_html[] PROGMEM = R"rawliteral(
         }
 
         function updateStock() {
-            let val = document.getElementById('add-stock').value; 
-            if(val === "") return;
-            fetch(`/setEstoque?valor=${val}`).then(() => { showToast("📦 Estoque Atualizado!"); setTimeout(() => location.reload(), 1500); });
+            let val1 = document.getElementById('add-stock-1').value; 
+            let val2 = document.getElementById('add-stock-2').value;
+            if(val1 === "" && val2 === "") return;
+            
+            let query = "";
+            if (val1 !== "") query += `v1=${val1}&`;
+            if (val2 !== "") query += `v2=${val2}`;
+            
+            fetch(`/setEstoque?${query}`).then(() => { showToast("📦 Estoque Atualizado!"); setTimeout(() => location.reload(), 1500); });
         }
     </script>
 </body>
@@ -343,17 +375,19 @@ void carregarConfiguracoes() {
             ssid = doc["ssid"].as<String>();
             password = doc["password"].as<String>();
             tutor_id = doc["tutor_id"].as<String>();
-            estoqueTotal = doc["estoque"].as<int>() | 0;
+            estoqueRemedio1 = doc["estoque1"] | 0;
+            estoqueRemedio2 = doc["estoque2"] | 0;
             modoDebug = doc["debug"] | true; 
             configurado = true;
             totalDoses = 0;
             JsonArray arr = doc["horarios"];
             for (JsonVariant v : arr) {
                 if (totalDoses < MAX_DOSES) {
-                    String hStr = v.as<String>();
+                    int t = v["t"].as<int>();
+                    String hStr = v["h"].as<String>();
                     int h = hStr.substring(0, 2).toInt();
                     int m = hStr.substring(3, 5).toInt();
-                    cronograma[totalDoses] = {h, m, false};
+                    cronograma[totalDoses] = {h, m, t, false};
                     totalDoses++;
                 }
             }
@@ -365,7 +399,9 @@ void carregarConfiguracoes() {
 void salvarEstoqueEDebug() {
     File file = LittleFS.open("/config.json", "r");
     JsonDocument doc; deserializeJson(doc, file); file.close();
-    doc["estoque"] = estoqueTotal; doc["debug"] = modoDebug; 
+    doc["estoque1"] = estoqueRemedio1; 
+    doc["estoque2"] = estoqueRemedio2; 
+    doc["debug"] = modoDebug; 
     file = LittleFS.open("/config.json", "w"); serializeJson(doc, file); file.close();
 }
 
@@ -388,9 +424,9 @@ void tratarMensagensTelegram(int numNovasMensagens) {
             bot.sendMessage(chat_id, "🤖 Olá! Sou o MedDispenser.\nEnvie /informacoes para status.\nEnvie /historico para o log de ingestão.", ""); 
         } 
         else if (text == "/informacoes") {
-            String resposta = "📋 Status do Sistema\n📦 Estoque: " + String(estoqueTotal) + " pílulas\n🕒 Alertas programados: " + String(totalDoses) + "\n";
+            String resposta = "📋 Status do Sistema\n📦 Estoque Remédio 1: " + String(estoqueRemedio1) + "\n📦 Estoque Remédio 2: " + String(estoqueRemedio2) + "\n🕒 Alertas programados: " + String(totalDoses) + "\n";
             DateTime now = rtc.now(); char horaAtual[20]; sprintf(horaAtual, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
-            resposta += "🕰️ Hora do RTC: " + String(horaAtual) + "\n🔧 Modo Debug: " + String(modoDebug ? "ATIVADO" : "DESATIVADO");
+            resposta += "🕰️ Hora do RTC: " + String(horaAtual) + "\n🌐 IP da Interface: " + WiFi.localIP().toString() + "\n🔧 Modo Debug: " + String(modoDebug ? "ATIVADO" : "DESATIVADO");
             bot.sendMessage(chat_id, resposta, "");
         }
         else if (text == "/debug") {
@@ -416,17 +452,18 @@ void tratarMensagensTelegram(int numNovasMensagens) {
 
 /**
  * @brief Gerencia a máquina de estados para o ciclo de rotação física do dispenser.
- * @details Executa até duas tentativas seqüenciais de dispensação. Valida o sucesso
- * via barreira infravermelha externa e prepara as interrupções de tempo de segurança.
- * @param motivo Identificador do gatilho gerador do evento (Agenda nominal ou Acionamento Manual).
+ * @details Executa tentativas seqüenciais de dispensação baseadas no compartimento. 
+ * @param motivo Identificador do gatilho gerador do evento.
+ * @param tipoRemedio Identificador do compartimento alvo (1 ou 2).
  */
-void executarCicloDispencacao(String motivo) {
-    enviarMensagemTelegram("💊 Iniciando Ciclo...\nMotivo: " + motivo, true);
+void executarCicloDispencacao(String motivo, int tipoRemedio) {
+    String nomeRemedio = (tipoRemedio == 2) ? "Remédio 2" : "Remédio 1";
+    enviarMensagemTelegram("💊 Iniciando Ciclo...\nMotivo: " + motivo + "\nAlvo: " + nomeRemedio, true);
     bool sucesso = false;
     
     atualizarSemaforo(LOW, HIGH, LOW); 
     esperandoRetiradaCopo = false; 
-    doseAtivaString = motivo; 
+    doseAtivaString = motivo + " (" + nomeRemedio + ")"; 
 
     for (int tentativa = 1; tentativa <= 2; tentativa++) {
         if (tentativa == 2) enviarMensagemTelegram("🔄 Tentando novamente. Pílula não detectada.", true);
@@ -434,7 +471,14 @@ void executarCicloDispencacao(String motivo) {
         pilulaDetectada = false; 
         enviarMensagemTelegram("⚙️ Acionando motor (Tentativa " + String(tentativa) + " de 2)...", true);
         
-        motorDispenser.write(0);   
+        // Log específico da rotação para manter a transparência da auditoria
+        registrarLog("⚙️ Motor rotacionando para " + nomeRemedio + " (Tentativa " + String(tentativa) + ")");
+        
+        if (tipoRemedio == 1) {
+            motorDispenser.write(0);   
+        } else {
+            motorDispenser.write(180); 
+        }
         delay(800);
         motorDispenser.write(90);  
 
@@ -443,11 +487,17 @@ void executarCicloDispencacao(String motivo) {
             if (pilulaDetectada) { sucesso = true; break; }
             delay(10); 
         }
+        
         if (sucesso) break; 
+        
+        if (!sucesso) {
+            registrarLog("⚠️ Pílula não detectada no feixe IR após rotação.");
+        }
     }
 
     if (sucesso) {
-        if (estoqueTotal > 0) estoqueTotal--;
+        if (tipoRemedio == 1 && estoqueRemedio1 > 0) estoqueRemedio1--;
+        if (tipoRemedio == 2 && estoqueRemedio2 > 0) estoqueRemedio2--;
         salvarEstoqueEDebug(); 
         
         atualizarSemaforo(LOW, LOW, HIGH); 
@@ -458,14 +508,15 @@ void executarCicloDispencacao(String motivo) {
         alertaEsquecimentoDisparado = false; 
         contadorBipsEsquecimento = 0; 
         
-        registrarLog("💊 Remédio liberado (" + doseAtivaString + ")");
-        enviarMensagemTelegram("✅ SUCESSO! Pílula detectada.\n📦 Novo estoque: " + String(estoqueTotal), true);
+        registrarLog("💊 " + nomeRemedio + " liberado (" + motivo + ")");
+        String estoqueAtual = (tipoRemedio == 1) ? String(estoqueRemedio1) : String(estoqueRemedio2);
+        enviarMensagemTelegram("✅ SUCESSO! Pílula detectada.\n📦 Novo estoque (" + nomeRemedio + "): " + estoqueAtual, true);
     } else {
         atualizarSemaforo(HIGH, LOW, LOW); 
         tocarBuzzer(5, 100, 100);
         
         registrarLog("🚨 FALHA CRÍTICA! Mecanismo travado (" + doseAtivaString + ")");
-        enviarMensagemTelegram("🚨 ERRO CRÍTICO!\nO motor girou 2 vezes e a pílula não caiu.", false);
+        enviarMensagemTelegram("🚨 ERRO CRÍTICO!\nO motor girou 2 vezes e o " + nomeRemedio + " não caiu.", false);
     }
 }
 
@@ -525,11 +576,23 @@ void setup() {
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){ request->send_P(200, "text/html", index_html); });
     
     server.on("/getStatus", HTTP_GET, [](AsyncWebServerRequest *request){ 
-        JsonDocument doc; doc["configurado"] = configurado; doc["tutor_id"] = tutor_id; doc["estoque"] = estoqueTotal;
+        JsonDocument doc; 
+        doc["configurado"] = configurado; 
+        doc["tutor_id"] = tutor_id; 
+        doc["estoque1"] = estoqueRemedio1;
+        doc["estoque2"] = estoqueRemedio2;
+        
         DateTime now = rtc.now(); char horaAtual[6]; sprintf(horaAtual, "%02d:%02d", now.hour(), now.minute());
         doc["hora_rtc"] = String(horaAtual);
+        
         JsonArray arr = doc["horarios"].to<JsonArray>();
-        for (int i = 0; i < totalDoses; i++) { char buffer[6]; sprintf(buffer, "%02d:%02d", cronograma[i].hora, cronograma[i].minuto); arr.add(String(buffer)); }
+        for (int i = 0; i < totalDoses; i++) { 
+            JsonObject obj = arr.add<JsonObject>();
+            obj["t"] = cronograma[i].tipo;
+            char buffer[6]; 
+            sprintf(buffer, "%02d:%02d", cronograma[i].hora, cronograma[i].minuto); 
+            obj["h"] = String(buffer);
+        }
         String res; serializeJson(doc, res); request->send(200, "application/json", res);
     });
 
@@ -543,16 +606,21 @@ void setup() {
     });
 
     server.on("/saveConfig", HTTP_GET, [](AsyncWebServerRequest *request){ 
-        JsonDocument doc; doc["ssid"] = request->hasParam("ssid") ? request->getParam("ssid")->value() : "";
+        JsonDocument doc; 
+        doc["ssid"] = request->hasParam("ssid") ? request->getParam("ssid")->value() : "";
         doc["password"] = request->hasParam("pass") ? request->getParam("pass")->value() : "";
         doc["tutor_id"] = request->hasParam("tutor") ? request->getParam("tutor")->value() : "";
-        doc["estoque"] = 0; doc["debug"] = true; doc["horarios"] = JsonArray(); 
+        doc["estoque1"] = 0; 
+        doc["estoque2"] = 0; 
+        doc["debug"] = true; 
+        doc["horarios"] = JsonArray(); 
         File file = LittleFS.open("/config.json", "w"); serializeJson(doc, file); file.close();
         request->send(200, "text/plain", "OK"); resetPendente = true; tempoReset = millis();
     });
 
     server.on("/setEstoque", HTTP_GET, [](AsyncWebServerRequest *request){ 
-        estoqueTotal = request->hasParam("valor") ? request->getParam("valor")->value().toInt() : 0;
+        if(request->hasParam("v1")) estoqueRemedio1 = request->getParam("v1")->value().toInt();
+        if(request->hasParam("v2")) estoqueRemedio2 = request->getParam("v2")->value().toInt();
         salvarEstoqueEDebug(); request->send(200, "text/plain", "OK");
     });
 
@@ -584,7 +652,10 @@ void loop() {
                 if (!cronograma[i].processada) {
                     char msgBuf[30];
                     sprintf(msgBuf, "Agenda: %02d:%02d", cronograma[i].hora, cronograma[i].minuto);
-                    executarCicloDispencacao(String(msgBuf));
+                    
+                    // O gatilho agora envia a string formatada E o tipo do remédio armazenado na Struct
+                    executarCicloDispencacao(String(msgBuf), cronograma[i].tipo);
+                    
                     cronograma[i].processada = true; 
                 }
             } 
@@ -641,7 +712,8 @@ void loop() {
     /* --- Varredura Assíncrona de Entradas Físicas (Botão Emergência) --- */
     if (digitalRead(botaoBoot) == LOW) {
         delay(200); 
-        executarCicloDispencacao("Acionamento Manual (Botão Placa)");
+        // Acionamento manual cravado estritamente no Remédio 1
+        executarCicloDispencacao("Acionamento Manual (Botão Placa)", 1);
     }
 
     /* --- Interrogador Assíncrono de Rede (Telegram Polling) --- */
